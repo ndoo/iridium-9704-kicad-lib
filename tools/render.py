@@ -1,0 +1,160 @@
+#!/usr/bin/env python3
+"""Render the footprint, symbol and 3D model to PNG/GIF images with kicad-cli.
+
+Writes a scratch board holding the footprint, then renders it the way the
+kicad-render-pcb GitHub Action does (top, bottom, plus an angled view and a
+rotating animation) and exports 2D images of the footprint and the symbol.
+
+Usage: python tools/render.py [--out out/render] [--lib out]
+Environment: KICAD_CLI is the kicad-cli command (default: kicad-cli); RSVG is
+rsvg-convert (default: rsvg-convert).
+"""
+
+import argparse
+import os
+import re
+import shlex
+import shutil
+import subprocess
+import sys
+import tempfile
+
+from PIL import Image
+
+LIB = "Iridium_9704"
+BOARD_CENTRE = (60.0, 50.0)
+BOARD_MARGIN = 5.0
+MODULE_SIZE = (42.0, 31.5)   # footprint extent after the quarter turn
+
+BOARD_HEADER = """(kicad_pcb
+\t(version 20260206)
+\t(generator "pcbnew")
+\t(generator_version "10.0")
+\t(general
+\t\t(thickness 1.6)
+\t\t(legacy_teardrops no)
+\t)
+\t(paper "A4")
+\t(layers
+\t\t(0 "F.Cu" signal)
+\t\t(2 "B.Cu" signal)
+\t\t(9 "F.Adhes" user "F.Adhesive")
+\t\t(11 "B.Adhes" user "B.Adhesive")
+\t\t(13 "F.Paste" user)
+\t\t(15 "B.Paste" user)
+\t\t(5 "F.SilkS" user "F.Silkscreen")
+\t\t(7 "B.SilkS" user "B.Silkscreen")
+\t\t(1 "F.Mask" user)
+\t\t(3 "B.Mask" user)
+\t\t(17 "Dwgs.User" user "User.Drawings")
+\t\t(19 "Cmts.User" user "User.Comments")
+\t\t(21 "Eco1.User" user "User.Eco1")
+\t\t(23 "Eco2.User" user "User.Eco2")
+\t\t(25 "Edge.Cuts" user)
+\t\t(27 "Margin" user)
+\t\t(31 "F.CrtYd" user "F.Courtyard")
+\t\t(29 "B.CrtYd" user "B.Courtyard")
+\t\t(35 "F.Fab" user)
+\t\t(33 "B.Fab" user)
+\t)
+\t(setup
+\t\t(pad_to_mask_clearance 0)
+\t\t(tenting (front yes) (back yes))
+\t)
+\t(net 0 "")
+"""
+
+
+def board_text(footprint_path):
+    """A board with the footprint at BOARD_CENTRE inside a rectangular outline."""
+    cx, cy = BOARD_CENTRE
+    hw = MODULE_SIZE[0] / 2 + BOARD_MARGIN
+    hh = MODULE_SIZE[1] / 2 + BOARD_MARGIN
+    with open(footprint_path) as f:
+        lines = f.read().rstrip("\n").split("\n")
+    placed = []
+    for line in lines:
+        placed.append(line)
+        if line == '\t(layer "F.Cu")':
+            placed.append(f"\t(at {cx} {cy})")
+    outline = (f'\t(gr_rect (start {cx - hw} {cy - hh}) (end {cx + hw} {cy + hh}) '
+               f'(stroke (width 0.05) (type default)) (fill no) (layer "Edge.Cuts") '
+               f'(uuid "6f1c2a52-9704-4c3e-b5a1-3d1a0e7c0001"))')
+    return BOARD_HEADER + "\n".join(placed).replace("\n(footprint", "\n\t(footprint", 1) + "\n" + outline + "\n)\n"
+
+
+def pad_svg(path, margin):
+    """Grow a kicad-cli SVG's viewBox by margin (mm) on every side; the export crops
+    to the footprint and clips text and markers that stick out."""
+    with open(path) as f:
+        text = f.read()
+    m = re.search(r'width="([\d.]+)mm"\s+height="([\d.]+)mm"\s+viewBox="([-\d.]+) ([-\d.]+) ([\d.]+) ([\d.]+)"', text)
+    w, h, x, y, vw, vh = (float(v) for v in m.groups())
+    new = (f'width="{w + 2 * margin:.6f}mm" height="{h + 2 * margin:.6f}mm" '
+           f'viewBox="{x - margin:.6f} {y - margin:.6f} {vw + 2 * margin:.6f} {vh + 2 * margin:.6f}"')
+    with open(path, "w") as f:
+        f.write(text[:m.start()] + new + text[m.end():])
+
+
+def run(cmd, env=None):
+    print("+", " ".join(shlex.quote(c) for c in cmd), flush=True)
+    subprocess.run(cmd, check=True, env=env)
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--lib", default="out", help="directory with the built library")
+    ap.add_argument("--out", default="out/render")
+    args = ap.parse_args()
+
+    cli = shlex.split(os.environ.get("KICAD_CLI", "kicad-cli"))
+    rsvg = os.environ.get("RSVG", "rsvg-convert")
+    lib = os.path.abspath(args.lib)
+    out = os.path.abspath(args.out)
+    os.makedirs(out, exist_ok=True)
+    env = dict(os.environ, IRIDIUM_9704_3DMODEL_DIR=lib)
+
+    footprint = os.path.join(lib, f"{LIB}.pretty", f"{LIB}.kicad_mod")
+    symbols = os.path.join(lib, f"{LIB}.kicad_sym")
+    # Scratch files live under the output directory so a containerised kicad-cli, which
+    # mounts only the working directory, can read them.
+    with tempfile.TemporaryDirectory(prefix=".render-", dir=out) as tmp:
+        board = os.path.join(tmp, "board.kicad_pcb")
+        with open(board, "w") as f:
+            f.write(board_text(footprint))
+
+        def render(name, *extra, size=(1600, 1280), quality="high", background="transparent", zoom=1):
+            run(cli + ["pcb", "render", "--width", str(size[0]), "--height", str(size[1]),
+                       "--quality", quality, "--background", background, "--zoom", str(zoom),
+                       *extra, "-o", os.path.join(out, name), board], env=env)
+
+        render("render-top.png", "--side", "top")
+        render("render-bottom.png", "--side", "bottom")
+        render("render-angled.png", "--rotate", "-50,0,25", "--perspective", zoom=0.8)
+
+        # 3 degrees per frame, as in the kicad-render-pcb action; 40 ms per frame gives
+        # one turn in 4.8 s
+        frames = []
+        for i, angle in enumerate(range(0, 360, 3)):
+            frame = os.path.join(tmp, f"frame{i:03d}.png")
+            run(cli + ["pcb", "render", "--width", "400", "--height", "320", "--quality", "basic",
+                       "--background", "opaque", "--zoom", "0.8", "--rotate", f"-50,0,{angle}", "--perspective",
+                       "-o", frame, board], env=env)
+            frames.append(Image.open(frame).convert("RGB"))
+        frames[0].save(os.path.join(out, "render-rotating.gif"), save_all=True,
+                       append_images=frames[1:], duration=40, loop=0, optimize=True)
+
+        run(cli + ["fp", "export", "svg", "--footprint", LIB, "--layers",
+                   "F.Cu,F.Mask,F.SilkS,F.Fab,F.CrtYd,Dwgs.User", "-o", tmp,
+                   os.path.join(lib, f"{LIB}.pretty")], env=env)
+        pad_svg(os.path.join(tmp, f"{LIB}.svg"), 2.5)
+        run([rsvg, "-w", "1600", "-b", "white", os.path.join(tmp, f"{LIB}.svg"),
+             "-o", os.path.join(out, "render-footprint.png")])
+        run(cli + ["sym", "export", "svg", "-o", tmp, symbols], env=env)
+        run([rsvg, "-w", "1200", "-b", "white", os.path.join(tmp, f"{LIB}_unit1.svg"),
+             "-o", os.path.join(out, "render-symbol.png")])
+    print("wrote", ", ".join(sorted(os.listdir(out))))
+
+
+if __name__ == "__main__":
+    sys.exit(main())

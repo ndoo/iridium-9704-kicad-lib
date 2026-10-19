@@ -1,0 +1,8 @@
+# Tested with Python 3.13. cadquery-ocp must stay on 7.9.x: the
+# TColgp_Array1OfPnt import used by the STEP scripts is absent in 8.x.
+cadquery-ocp==7.9.3.1.1
+numpy==2.5.4
+fonttools==4.67.0
+uharfbuzz==0.56.3
+shapely==2.2.0
+pillow==13.0.0

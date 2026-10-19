@@ -1,0 +1,66 @@
+# The release zip contains content derived from third-party fonts, logos and
+# vendor CAD (see assets.lock). Distributing it is the repository owner's
+# responsibility; no such content is committed to git.
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install p7zip and librsvg
+        run: sudo apt-get update && sudo apt-get install -y p7zip-full librsvg2-bin
+      - run: pip install -r requirements.txt
+      - uses: actions/cache@v4
+        with:
+          path: third_party
+          key: assets-${{ hashFiles('assets.lock') }}
+      - run: make package
+      - run: make check CHECK_STEP=1
+      - name: Render images
+        run: make render KICAD_CLI="$PWD/tools/kicad-cli-docker.sh"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Iridium_9704-kicad-lib
+          path: out/Iridium_9704-kicad-lib.zip
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Iridium_9704-renders
+          path: out/render/
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Iridium_9704-kicad-lib
+      - uses: actions/download-artifact@v4
+        with:
+          name: Iridium_9704-renders
+          path: render
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            Iridium_9704-kicad-lib.zip
+            render/*

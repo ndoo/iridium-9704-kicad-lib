@@ -1,0 +1,7 @@
+out/
+third_party/
+__pycache__/
+.DS_Store
+*.kicad_prl
+*-backups/
+.claude/

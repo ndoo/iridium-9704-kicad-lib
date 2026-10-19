@@ -1,0 +1,213 @@
+{
+  "comment": "Third-party build inputs. dest is relative to the third_party directory. mirrors are tried in order; each mirror sha256 is of the bytes that URL serves. finals lists accepted sha256 values of the final file; one is preferred, and using another prints a warning. Adding a mirror is one more line in the mirrors list.",
+  "entries": [
+    {
+      "name": "vendor-step",
+      "kind": "zip",
+      "member": "RockBLOCK 9704-SMA-2A.step",
+      "dest": "vendor/RockBLOCK_9704-SMA-2A.step",
+      "license": "Ground Control vendor CAD for the RockBLOCK 9704; used to derive the shield can geometry; not redistributable by this repository",
+      "finals": [
+        {
+          "sha256": "44ec669bd683b7ee4d98f88535e0d98bf4a09cf471c74ae74a776c67088a85ce",
+          "label": "vendor STEP 2A",
+          "preferred": true
+        }
+      ],
+      "mirrors": [
+        {
+          "url": "https://docs.groundcontrol.com/assets/files/STEP_RockBLOCK-9704-SMA_2A-a7e8f7e0057cc0bd09f4c650bb007092.zip",
+          "sha256": "614b04901e6d5537e89f35c1d87e3c382f0a27e2a206bb4999c29c1fcbb4c3fe",
+          "note": "Hashed URL is immutable but may be re-published; if it 404s, re-scrape https://docs.groundcontrol.com/iot/rockblock-9704/hardware for the current STEP zip link and update assets.lock"
+        }
+      ]
+    },
+    {
+      "name": "iridium-logo",
+      "kind": "raw",
+      "dest": "logos/Iridium_Satellite_LLC_logo.svg",
+      "license": "Iridium logo, trademark of Iridium Satellite LLC; Wikimedia Commons",
+      "finals": [
+        {
+          "sha256": "581c8fd4b45235935a81726f186a29223a716b2161e6733a00cfab56382098ba",
+          "label": "iridium-logo",
+          "preferred": true
+        }
+      ],
+      "mirrors": [
+        {
+          "url": "https://upload.wikimedia.org/wikipedia/commons/4/4c/Iridium_Satellite_LLC_logo.svg",
+          "sha256": "581c8fd4b45235935a81726f186a29223a716b2161e6733a00cfab56382098ba"
+        }
+      ]
+    },
+    {
+      "name": "ce-logo",
+      "kind": "raw",
+      "dest": "logos/Conformite_Europeenne_logo.svg",
+      "license": "CE marking; Wikimedia Commons (URL is not revision-pinned; the checksum is the pin)",
+      "finals": [
+        {
+          "sha256": "2b0ae6baa1b1e14986fd2aec903105c87f6983caafcbbf99b8fc5c13ead25447",
+          "label": "ce-logo",
+          "preferred": true
+        }
+      ],
+      "mirrors": [
+        {
+          "url": "https://upload.wikimedia.org/wikipedia/commons/6/66/Conformit%C3%A9_Europ%C3%A9enne_%28logo%29.svg",
+          "sha256": "2b0ae6baa1b1e14986fd2aec903105c87f6983caafcbbf99b8fc5c13ead25447"
+        }
+      ]
+    },
+    {
+      "name": "myriadpro-regular",
+      "kind": "raw",
+      "dest": "fonts/MyriadPro-Regular.otf",
+      "license": "Adobe commercial font hosted by a third party; fetched at build time, never committed or re-hosted by this repository",
+      "finals": [
+        {
+          "sha256": "99bbd2dd05a6c1e0459375e5b97578420a2c483e98ffca0c92051910df9784aa",
+          "label": "Myriad Pro (GitHub copy, the version the label build was tuned with)",
+          "preferred": true
+        }
+      ],
+      "mirrors": [
+        {
+          "url": "https://raw.githubusercontent.com/Ultimo2905/Banner/2306b28c67af0029f5bfeb07656750e93863eff8/fonts/MyriadPro-Regular.otf",
+          "sha256": "99bbd2dd05a6c1e0459375e5b97578420a2c483e98ffca0c92051910df9784aa"
+        },
+        {
+          "url": "https://cdn.jsdelivr.net/gh/Ultimo2905/Banner@2306b28c67af0029f5bfeb07656750e93863eff8/fonts/MyriadPro-Regular.otf",
+          "sha256": "99bbd2dd05a6c1e0459375e5b97578420a2c483e98ffca0c92051910df9784aa"
+        },
+        {
+          "url": "https://rawcdn.githack.com/Ultimo2905/Banner/2306b28c67af0029f5bfeb07656750e93863eff8/fonts/MyriadPro-Regular.otf",
+          "sha256": "99bbd2dd05a6c1e0459375e5b97578420a2c483e98ffca0c92051910df9784aa"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/AppalachiaInteractive/com.appalachia.design/1a8e185fd11e004b555e9afd3d54a3fdbc9120bc/_bugs/svg_export_compound_path/svg_export_compound_path_Folder/Fonts/MyriadPro-Regular.otf",
+          "sha256": "99bbd2dd05a6c1e0459375e5b97578420a2c483e98ffca0c92051910df9784aa"
+        },
+        {
+          "url": "https://cdn.jsdelivr.net/gh/AppalachiaInteractive/com.appalachia.design@1a8e185fd11e004b555e9afd3d54a3fdbc9120bc/_bugs/svg_export_compound_path/svg_export_compound_path_Folder/Fonts/MyriadPro-Regular.otf",
+          "sha256": "99bbd2dd05a6c1e0459375e5b97578420a2c483e98ffca0c92051910df9784aa"
+        }
+      ]
+    },
+    {
+      "name": "myriadpro-semibold",
+      "kind": "raw",
+      "dest": "fonts/MyriadPro-Semibold.otf",
+      "license": "Adobe commercial font hosted by a third party; fetched at build time, never committed or re-hosted by this repository",
+      "finals": [
+        {
+          "sha256": "f711cbed3ae7bcca9b2c00cb5dfb1d53ac4e752166ea6b3aaa00b676935685dd",
+          "label": "Myriad Pro (GitHub copy, the version the label build was tuned with)",
+          "preferred": true
+        }
+      ],
+      "mirrors": [
+        {
+          "url": "https://raw.githubusercontent.com/Ultimo2905/Banner/2306b28c67af0029f5bfeb07656750e93863eff8/fonts/MyriadPro-Semibold.otf",
+          "sha256": "f711cbed3ae7bcca9b2c00cb5dfb1d53ac4e752166ea6b3aaa00b676935685dd"
+        },
+        {
+          "url": "https://cdn.jsdelivr.net/gh/Ultimo2905/Banner@2306b28c67af0029f5bfeb07656750e93863eff8/fonts/MyriadPro-Semibold.otf",
+          "sha256": "f711cbed3ae7bcca9b2c00cb5dfb1d53ac4e752166ea6b3aaa00b676935685dd"
+        },
+        {
+          "url": "https://rawcdn.githack.com/Ultimo2905/Banner/2306b28c67af0029f5bfeb07656750e93863eff8/fonts/MyriadPro-Semibold.otf",
+          "sha256": "f711cbed3ae7bcca9b2c00cb5dfb1d53ac4e752166ea6b3aaa00b676935685dd"
+        }
+      ]
+    },
+    {
+      "name": "myriadpro-bold",
+      "kind": "raw",
+      "dest": "fonts/MyriadPro-Bold.otf",
+      "license": "Adobe commercial font hosted by a third party; fetched at build time, never committed or re-hosted by this repository",
+      "finals": [
+        {
+          "sha256": "9a6a43a9769d42ee5aba0c7584e5d5b7e143fa2ccafd4518f64a047e98f3e91a",
+          "label": "Myriad Pro (GitHub copy, the version the label build was tuned with)",
+          "preferred": true
+        }
+      ],
+      "mirrors": [
+        {
+          "url": "https://raw.githubusercontent.com/Ultimo2905/Banner/2306b28c67af0029f5bfeb07656750e93863eff8/fonts/MyriadPro-Bold.otf",
+          "sha256": "9a6a43a9769d42ee5aba0c7584e5d5b7e143fa2ccafd4518f64a047e98f3e91a"
+        },
+        {
+          "url": "https://cdn.jsdelivr.net/gh/Ultimo2905/Banner@2306b28c67af0029f5bfeb07656750e93863eff8/fonts/MyriadPro-Bold.otf",
+          "sha256": "9a6a43a9769d42ee5aba0c7584e5d5b7e143fa2ccafd4518f64a047e98f3e91a"
+        },
+        {
+          "url": "https://rawcdn.githack.com/Ultimo2905/Banner/2306b28c67af0029f5bfeb07656750e93863eff8/fonts/MyriadPro-Bold.otf",
+          "sha256": "9a6a43a9769d42ee5aba0c7584e5d5b7e143fa2ccafd4518f64a047e98f3e91a"
+        }
+      ]
+    },
+    {
+      "name": "timesbd",
+      "kind": "exe",
+      "member": "Timesbd.TTF",
+      "dest": "fonts/timesbd.ttf",
+      "license": "Microsoft core fonts EULA: redistribution of the unmodified original only; the exe is unpacked with 7z or cabextract, never executed",
+      "finals": [
+        {
+          "sha256": "4357b63cef20c01661a53c5dae70ffd20cb4765503aaed6d38b17a57c5a90bff",
+          "label": "Times New Roman Bold",
+          "preferred": true
+        }
+      ],
+      "mirrors": [
+        {
+          "url": "https://downloads.sourceforge.net/corefonts/times32.exe",
+          "sha256": "db56595ec6ef5d3de5c24994f001f03b2a13e37cee27bc25c58f6f43e8f807ab"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/ImageMagick/msttcorefonts/36108b2946d1e417104ae93f4a3edca8580cc6c0/fonts/Times_New_Roman_Bold.ttf",
+          "kind": "raw",
+          "sha256": "4357b63cef20c01661a53c5dae70ffd20cb4765503aaed6d38b17a57c5a90bff"
+        },
+        {
+          "url": "https://cdn.jsdelivr.net/gh/ImageMagick/msttcorefonts@36108b2946d1e417104ae93f4a3edca8580cc6c0/fonts/Times_New_Roman_Bold.ttf",
+          "kind": "raw",
+          "sha256": "4357b63cef20c01661a53c5dae70ffd20cb4765503aaed6d38b17a57c5a90bff"
+        },
+        {
+          "url": "https://rawcdn.githack.com/ImageMagick/msttcorefonts/36108b2946d1e417104ae93f4a3edca8580cc6c0/fonts/Times_New_Roman_Bold.ttf",
+          "kind": "raw",
+          "sha256": "4357b63cef20c01661a53c5dae70ffd20cb4765503aaed6d38b17a57c5a90bff"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/XiangyunHuang/fonts/0f3a336023800d19f951a5fbc0a2cf34e46d7ee2/Times_New_Roman_Bold.ttf",
+          "kind": "raw",
+          "sha256": "4357b63cef20c01661a53c5dae70ffd20cb4765503aaed6d38b17a57c5a90bff"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/alimusdu/msttcorefonts/e23954ea7df46998a4d01d8ee7b8549340fed913/Times_New_Roman_Bold.ttf",
+          "kind": "raw",
+          "sha256": "4357b63cef20c01661a53c5dae70ffd20cb4765503aaed6d38b17a57c5a90bff"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/chrisdfh/msttcorefonts/6ac9ae5e0d3277751b899442a9434e42fc1765b2/Times_New_Roman_Bold.ttf",
+          "kind": "raw",
+          "sha256": "4357b63cef20c01661a53c5dae70ffd20cb4765503aaed6d38b17a57c5a90bff"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/perrsona1234/truetype/01a4d55d2b3cadb9989b71822ead23b2076fdd99/timesbd.ttf",
+          "kind": "raw",
+          "sha256": "4357b63cef20c01661a53c5dae70ffd20cb4765503aaed6d38b17a57c5a90bff"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/misuchiru03/ms-core-fonts/43979e96c62f0d20df7ae86e3f32f8cfb8b0cb69/Timesbd.TTF",
+          "kind": "raw",
+          "sha256": "4357b63cef20c01661a53c5dae70ffd20cb4765503aaed6d38b17a57c5a90bff"
+        }
+      ]
+    }
+  ]
+}

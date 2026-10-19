@@ -7,7 +7,8 @@ rotating animation) and exports 2D images of the footprint and the symbol.
 
 Usage: python tools/render.py [--out out/render] [--lib out]
 Environment: KICAD_CLI is the kicad-cli command (default: kicad-cli); RSVG is
-rsvg-convert (default: rsvg-convert).
+rsvg-convert (default: rsvg-convert). Commands run quietly and their output is shown
+only on failure; RENDER_VERBOSE=1 echoes every command and its output.
 """
 
 import argparse
@@ -97,8 +98,13 @@ def pad_svg(path, margin):
 
 
 def run(cmd, env=None):
-    print("+", " ".join(shlex.quote(c) for c in cmd), flush=True)
-    subprocess.run(cmd, check=True, env=env)
+    verbose = bool(os.environ.get("RENDER_VERBOSE"))
+    if verbose:
+        print("+", " ".join(shlex.quote(c) for c in cmd), flush=True)
+    res = subprocess.run(cmd, env=env, capture_output=not verbose, text=True)
+    if res.returncode:
+        sys.stderr.write((res.stdout or "") + (res.stderr or ""))
+        sys.exit(f"render: failed: {' '.join(shlex.quote(c) for c in cmd)}")
 
 
 def main():

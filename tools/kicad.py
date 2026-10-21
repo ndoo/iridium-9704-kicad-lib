@@ -92,7 +92,7 @@ def generate_footprint(pin_data):
         w(')', 2)
         w(')', 1)
 
-    text_y = half_w + 0.5 + 1.5     # 1.5 mm beyond the courtyard
+    text_y = half_w + 0.5 + 1            # 1 mm beyond the courtyard
     _prop("Reference", "REF**",          0, -text_y, "F.SilkS")
     _prop("Value",     "Iridium_9704",   0,  text_y, "F.Fab")
     _prop("Datasheet", "",               0,   0.0, "F.Fab", hide=True,
@@ -109,16 +109,16 @@ def generate_footprint(pin_data):
     # ------------------------------------------------------------------
     # Silkscreen outline (F.SilkS)
     # ------------------------------------------------------------------
-    silk_off = 0.3
-    sx = half_w + silk_off     # 16.05
-    sy = half_h + silk_off     # 21.30
+    silk_off = 0.12 / 2 + 0.10 / 2
+    sx = half_w + silk_off
+    sy = half_h + silk_off
 
-    # Simple rectangular silkscreen outline
+    # Simple rectangular silkscreen outline with gap on the pin-1 triangle corner
     silk_segs = [
-        ((-sx, -sy), ( sx, -sy)),   # top
-        (( sx, -sy), ( sx,  sy)),   # right
-        (( sx,  sy), (-sx,  sy)),   # bottom
-        ((-sx,  sy), (-sx, -sy)),   # left
+        ((-sx + 0.24, -sy), ( sx, -sy       )),   # top
+        (( sx,        -sy), ( sx,  sy       )),   # right
+        (( sx,         sy), (-sx,  sy       )),   # bottom
+        ((-sx,         sy), (-sx, -sy + 0.24)),   # left
     ]
     for (x1, y1), (x2, y2) in silk_segs:
         (x1, y1), (x2, y2) = rot(x1, y1), rot(x2, y2)
@@ -133,11 +133,8 @@ def generate_footprint(pin_data):
         w(f'(uuid "{_u()}")', 2)
         w(')', 1)
 
-    # Pin 1 marker: the 0.5 mm right-angle triangle of RF_Module/Astrocast_AST50147-00,
-    # right angle towards the part. Edge-to-edge gap to the silkscreen lines is one
-    # line width (0.12 mm, the most common spacing in KiCad's footprints); the vertex is
-    # that plus half the silk width and half the marker stroke from each silk centreline
-    gap = 0.12 + 0.06 + 0.06
+    # Pin 1 marker: 0.5 mm right-angle triangle
+    gap = 0
     leg = 0.5
     px, py = -sx - gap, -sy - gap
     tri = [rot(*p) for p in ((px, py), (px - leg, py), (px, py - leg), (px, py))]

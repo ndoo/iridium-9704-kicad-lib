@@ -88,7 +88,7 @@ check: $(FOOTPRINT) $(SYMBOL)
 	@test -s $(FOOTPRINT) || { echo "missing $(FOOTPRINT)"; exit 1; }
 	@test -s $(SYMBOL) || { echo "missing $(SYMBOL)"; exit 1; }
 	@if [ "$(CHECK_STEP)" = 1 ] || [ -e $(STEP) ]; then test -s $(STEP) || { echo "missing or empty $(STEP)"; exit 1; }; else echo "STEP not built, skipped"; fi
-	@test "$$(grep -c '(pad "[0-9]' $(FOOTPRINT))" = 88 || { echo "footprint: expected 88 numbered pads"; exit 1; }
+	@test "$$(grep -Ec '\(pad "[0-9]+" smd' $(FOOTPRINT))" = 88 || { echo "footprint: expected 88 numbered pads"; exit 1; }
 	@test "$$(grep -c '(pin ' $(SYMBOL))" = 88 || { echo "symbol: expected 88 pins"; exit 1; }
 	@echo "check OK"
 

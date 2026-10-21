@@ -51,9 +51,68 @@ def rot(x, y):
 
 def generate_footprint(pin_data):
     """Build the complete .kicad_mod content string."""
+
+    # KLC-driven parameters
+
+    # ==================================================================
+    # KLC F5.2: Fabrication layer requirements
+    # Ordered first as other sections reference the mechanical outline
+    # ==================================================================
+
+    # KLC F5.2.1.a: Outline uses line width between {0.10mm and 0.15mm}
+    # (recommended 0.10mm)
+    fab_line_width = 0.1
+
+    # KLC F5.2.2.b: Bevel should be 1mm or 25% of package size
+    # (whichever is smaller)
+    fab_chamfer = 1.0
+
+    # ==================================================================
+    # KLC F5.1: Silkscreen layer requirements
+    # ==================================================================
+
+    # KLC F5.1.1.a: Text size = 1.00mm
+    silk_font_sz = (1, 1)
+
+    # KLC F5.1.1.b: Text thickness = 0.15mm
+    silk_font_thickness = 0.15
+
+    # KLC F5.1.2.a: Silkscreen line width should nominally be 0.12mm
+    silk_line_width = 0.12
+
+    # KLC F5.1.4: For SMD footprints, silkscreen must be fully visible
+    # after boards assembly (no silkscreen allowed under component)
+    #
+    # + KLC F5.4: Elements on the graphic layer should not overlap
+    silk_offset = 0 + silk_line_width / 2 + fab_line_width / 2
+
+    # KLC F5.1.Polarity.1.a: It should positioned inside the courtyard to
+    # prevent silkscreen overlap
+    silk_pin1_gap = 0
+    silk_pin1_size = 0.5 - silk_line_width * 1.5
+
+    # ==================================================================
+    # KLC F5.3: Courtyard layer requirements
+    # ==================================================================
+
+    # F5.3.1: Courtyard uses 0.05mm line width
+    crt_line_width = 0.05
+
+    # F5.3.5
+    # Unless otherwise specified, clearance is 0.25mm. This shrinks to
+    # 0.15mm for parts smaller than 1.5mm in any dimension.
+    #
+    # Note: Increased for more assembly tolerance and to accommodate the
+    # silkscreen gap on the pin-1 corner
+    crt_offset = 0.5
+
+    # KLC F6.3.1: By default, pads for SMD footprints should use
+    # only the following layers
+    pad_smd_layers = '"F.Cu" "F.Mask" "F.Paste"'
+
     pads_raw = pin_data["pads"]
-    half_w = 15.75   # module half-width  (31.5 / 2)
-    half_h = 21.0    # module half-height (42.0 / 2)
+    half_w = pin_data["mod_w"] / 2
+    half_h = pin_data["mod_h"] / 2
 
     out = []
     _u = _make_u()
@@ -76,7 +135,8 @@ def generate_footprint(pin_data):
     # ------------------------------------------------------------------
     # Properties (each with unlocked + uuid)
     # ------------------------------------------------------------------
-    def _prop(name, value, at_x, at_y, layer, hide=False, font_sz=(1, 1)):
+
+    def _prop(name, value, at_x, at_y, layer, hide=False, font_sz=silk_font_sz):
         w(f'(property "{name}" "{value}"', 1)
         w(f'(at {at_x} {at_y} 0)', 2)
         w('(unlocked yes)', 2)
@@ -87,14 +147,19 @@ def generate_footprint(pin_data):
         w('(effects', 2)
         w('(font', 3)
         w(f'(size {font_sz[0]} {font_sz[1]})', 4)
-        w('(thickness 0.15)', 4)
+        w(f'(thickness {silk_font_thickness})', 4)
         w(')', 3)
         w(')', 2)
         w(')', 1)
 
     text_y = half_w + 0.5 + 1            # 1 mm beyond the courtyard
+
+    # KLC F5.1.1: Reference Designator must be drawn on F.SilkS layer
     _prop("Reference", "REF**",          0, -text_y, "F.SilkS")
+
+    # KLC F5.2.3: Component value (footprint name) must be displayed on the F.Fab layer
     _prop("Value",     "Iridium_9704",   0,  text_y, "F.Fab")
+
     _prop("Datasheet", "",               0,   0.0, "F.Fab", hide=True,
           font_sz=(1.27, 1.27))
     _prop("Description", "",             0,   0.0, "F.Fab", hide=True,
@@ -103,22 +168,28 @@ def generate_footprint(pin_data):
     # ------------------------------------------------------------------
     # Attributes
     # ------------------------------------------------------------------
+
+    # KLC F6.1: Footprint component type must be set to surface mount
     w('(attr smd)', 1)
+
     w('(duplicate_pad_numbers_are_jumpers no)', 1)
 
     # ------------------------------------------------------------------
-    # Silkscreen outline (F.SilkS)
+    # KLC F5.1 Silkscreen layer requirements:
+    # The silkscreen is printed to the external surface of a PCB to aid
+    # in component identification and orientation. Typically this layer
+    # contains the component RefDes to locate components on the board
+    # after assembly.
     # ------------------------------------------------------------------
-    silk_off = 0.12 / 2 + 0.10 / 2
-    sx = half_w + silk_off
-    sy = half_h + silk_off
+    sx = half_w + silk_offset
+    sy = half_h + silk_offset
 
     # Simple rectangular silkscreen outline with gap on the pin-1 triangle corner
     silk_segs = [
-        ((-sx + 0.24, -sy), ( sx, -sy       )),   # top
-        (( sx,        -sy), ( sx,  sy       )),   # right
-        (( sx,         sy), (-sx,  sy       )),   # bottom
-        ((-sx,         sy), (-sx, -sy + 0.24)),   # left
+        ((-sx + silk_line_width * 2, -sy), ( sx, -sy                      )),   # top
+        (( sx,                       -sy), ( sx,  sy                      )),   # right
+        (( sx,                        sy), (-sx,  sy                      )),   # bottom
+        ((-sx,                        sy), (-sx, -sy + silk_line_width * 2)),   # left
     ]
     for (x1, y1), (x2, y2) in silk_segs:
         (x1, y1), (x2, y2) = rot(x1, y1), rot(x2, y2)
@@ -126,24 +197,27 @@ def generate_footprint(pin_data):
         w(f'(start {x1:.3f} {y1:.3f})', 2)
         w(f'(end {x2:.3f} {y2:.3f})', 2)
         w('(stroke', 2)
-        w('(width 0.12)', 3)
+        w(f'(width {silk_line_width})', 3)
         w('(type solid)', 3)
         w(')', 2)
         w('(layer "F.SilkS")', 2)
         w(f'(uuid "{_u()}")', 2)
         w(')', 1)
 
-    # Pin 1 marker: 0.5 mm right-angle triangle
-    gap = 0
-    leg = 0.5
-    px, py = -sx - gap, -sy - gap
-    tri = [rot(*p) for p in ((px, py), (px - leg, py), (px, py - leg), (px, py))]
+    # ------------------------------------------------------------------
+    # KLC F5.1.6:
+    # Polarity marking / Pin-1 designator must be drawn on the F.SilkS
+    # layer
+    # ------------------------------------------------------------------
+
+    px, py = -sx - silk_pin1_gap, -sy - silk_pin1_gap
+    tri = [rot(*p) for p in ((px, py), (px - silk_pin1_size, py), (px, py - silk_pin1_size), (px, py))]
     w('(fp_poly', 1)
     w('(pts', 2)
     w(' '.join(f'(xy {x:.3f} {y:.3f})' for x, y in tri), 3)
     w(')', 2)
     w('(stroke', 2)
-    w('(width 0.12)', 3)
+    w(f'(width {silk_line_width})', 3)
     w('(type solid)', 3)
     w(')', 2)
     w('(fill yes)', 2)
@@ -152,11 +226,47 @@ def generate_footprint(pin_data):
     w(')', 1)
 
     # ------------------------------------------------------------------
-    # Courtyard (F.CrtYd)
+    # KLC F5.2: Fabrication layer requirements
+    # The fabrication layers are used to display the simplified
+    # mechanical outline of components on the PCB.
     # ------------------------------------------------------------------
-    co = 0.5   # courtyard offset from body edge
-    cx = half_w + co    # 16.25
-    cy = half_h + co    # 21.50
+
+    # KLC F5.2.2: Footprint polarisation / location of pin-1 is drawn
+    fab_verts = [
+        (-half_w + fab_chamfer, -half_h               ),    # after chamfer on top edge
+        ( half_w,               -half_h               ),    # top-right
+        ( half_w,                half_h               ),    # bottom-right
+        (-half_w,                half_h               ),    # bottom-left
+        (-half_w,              -(half_h - fab_chamfer)),    # left edge up to chamfer
+        (-half_w + fab_chamfer, -half_h               ),    # close back to start
+    ]
+    for i in range(len(fab_verts) - 1):
+        x1, y1 = rot(*fab_verts[i])
+        x2, y2 = rot(*fab_verts[i + 1])
+        w('(fp_line', 1)
+        w(f'(start {x1:.3f} {y1:.3f})', 2)
+        w(f'(end {x2:.3f} {y2:.3f})', 2)
+        w('(stroke', 2)
+        w(f'(width {fab_line_width})', 3)
+        w('(type solid)', 3)
+        w(')', 2)
+        w('(layer "F.Fab")', 2)
+        w(f'(uuid "{_u()}")', 2)
+        w(')', 1)
+
+    # ------------------------------------------------------------------
+    # F5.3 Courtyard layer requirements:
+    # The component courtyard is defined as the smallest rectangular
+    # area that provides a minimum electrical and mechanical clearance
+    # around the combined component body and land pattern boundaries. It
+    # is allowed to create a contoured courtyard area using a polygon
+    # instead of a simple rectangle. (IPC-7351C)
+    #
+    # The courtyard should include any extra required clearance for
+    # mating connectors (for example).
+    # ------------------------------------------------------------------
+    cx = half_w + crt_offset    # 16.25
+    cy = half_h + crt_offset    # 21.50
     crt_segs = [
         ((-cx, -cy), ( cx, -cy)),
         (( cx, -cy), ( cx,  cy)),
@@ -166,39 +276,17 @@ def generate_footprint(pin_data):
     for (x1, y1), (x2, y2) in crt_segs:
         (x1, y1), (x2, y2) = rot(x1, y1), rot(x2, y2)
         w('(fp_line', 1)
-        w(f'(start {x1:.3f} {y1:.3f})', 2)
-        w(f'(end {x2:.3f} {y2:.3f})', 2)
+
+        # KLC F5.3.2: All courtyard line elements are placed on a 0.01mm
+        # grid
+        w(f'(start {x1:.2f} {y1:.2f})', 2)
+        w(f'(end {x2:.2f} {y2:.2f})', 2)
+
         w('(stroke', 2)
-        w('(width 0.05)', 3)
+        w(f'(width {crt_line_width})', 3)
         w('(type default)', 3)
         w(')', 2)
         w('(layer "F.CrtYd")', 2)
-        w(f'(uuid "{_u()}")', 2)
-        w(')', 1)
-
-    # ------------------------------------------------------------------
-    # Fabrication layer outline with pin-1 chamfer (F.Fab)
-    # ------------------------------------------------------------------
-    chamfer = 2.0
-    fab_verts = [
-        (-half_w + chamfer, -half_h),          # after chamfer on top edge
-        ( half_w,           -half_h),          # top-right
-        ( half_w,            half_h),          # bottom-right
-        (-half_w,            half_h),          # bottom-left
-        (-half_w,           -(half_h - chamfer)),  # left edge up to chamfer
-        (-half_w + chamfer, -half_h),          # close back to start
-    ]
-    for i in range(len(fab_verts) - 1):
-        x1, y1 = rot(*fab_verts[i])
-        x2, y2 = rot(*fab_verts[i + 1])
-        w('(fp_line', 1)
-        w(f'(start {x1:.3f} {y1:.3f})', 2)
-        w(f'(end {x2:.3f} {y2:.3f})', 2)
-        w('(stroke', 2)
-        w('(width 0.1)', 3)
-        w('(type solid)', 3)
-        w(')', 2)
-        w('(layer "F.Fab")', 2)
         w(f'(uuid "{_u()}")', 2)
         w(')', 1)
 
@@ -212,8 +300,8 @@ def generate_footprint(pin_data):
     w(f'(uuid "{_u()}")', 2)
     w('(effects', 2)
     w('(font', 3)
-    w('(size 1 1)', 4)
-    w('(thickness 0.15)', 4)
+    w(f'(size {silk_font_sz[0]} {silk_font_sz[1]})', 4)
+    w(f'(thickness {silk_font_thickness})', 4)
     w(')', 3)
     w(')', 2)
     w(')', 1)
@@ -236,7 +324,7 @@ def generate_footprint(pin_data):
             w(f'(pad "{pin}" smd roundrect', 1)
             w(f'(at {pcx:.2f} {pcy:.2f})', 2)
             w(f'(size {ipc_w:.2f} {ipc_h:.2f})', 2)
-            w('(layers "F.Cu" "F.Paste" "F.Mask")', 2)
+            w(f'(layers {pad_smd_layers})', 2)
             w('(roundrect_rratio 0.25)', 2)
             w('(chamfer_ratio 0.444)', 2)
             w('(chamfer top_right)', 2)
@@ -246,7 +334,7 @@ def generate_footprint(pin_data):
             w(f'(pad "{pin}" smd roundrect', 1)
             w(f'(at {pcx:.2f} {pcy:.2f})', 2)
             w(f'(size {ipc_w:.2f} {ipc_h:.2f})', 2)
-            w('(layers "F.Cu" "F.Paste" "F.Mask")', 2)
+            w(f'(layers {pad_smd_layers})', 2)
             w('(roundrect_rratio 0.25)', 2)
             w(f'(uuid "{_u(f"pad:{pin}")}")', 2)
             w(')', 1)

@@ -237,8 +237,8 @@ def generate_footprint(pin_data):
 
         if pin == 1:
             w(f'(pad "{pin}" smd roundrect', 1)
-            w(f'(at {pcx:.4f} {pcy:.4f})', 2)
-            w(f'(size {ipc_w:.4f} {ipc_h:.4f})', 2)
+            w(f'(at {pcx:.2f} {pcy:.2f})', 2)
+            w(f'(size {ipc_w:.2f} {ipc_h:.2f})', 2)
             w('(layers "F.Cu" "F.Paste" "F.Mask")', 2)
             w('(roundrect_rratio 0.25)', 2)
             w('(chamfer_ratio 0.444)', 2)
@@ -247,8 +247,8 @@ def generate_footprint(pin_data):
             w(')', 1)
         else:
             w(f'(pad "{pin}" smd roundrect', 1)
-            w(f'(at {pcx:.4f} {pcy:.4f})', 2)
-            w(f'(size {ipc_w:.4f} {ipc_h:.4f})', 2)
+            w(f'(at {pcx:.2f} {pcy:.2f})', 2)
+            w(f'(size {ipc_w:.2f} {ipc_h:.2f})', 2)
             w('(layers "F.Cu" "F.Paste" "F.Mask")', 2)
             w('(roundrect_rratio 0.25)', 2)
             w(f'(uuid "{_u(f"pad:{pin}")}")', 2)
@@ -287,11 +287,12 @@ def generate_footprint(pin_data):
             offsets = [(vx0, vy0 - 0.5), (vx0, vy0 + 0.5)]
 
         for vi, (vx, vy) in enumerate(rot(*o) for o in offsets):
-            w('(pad "" thru_hole circle', 1)
-            w(f'(at {vx:.4f} {vy:.4f})', 2)
-            w('(size 0.600 0.600)', 2)
-            w('(drill 0.300)', 2)
-            w('(layers "*.Cu" "*.Mask")', 2)
+            w(f'(pad "{pad["pin"]}" thru_hole circle', 1)
+            w(f'(at {vx:.2f} {vy:.2f})', 2)
+            w('(size 0.5 0.5)', 2)
+            w('(drill 0.2)', 2)
+            w('(layers "*.Cu")', 2)
+            w('(remove_unused_layers no)', 2)
             w(f'(uuid "{_u(f"via:{vp}:{vi}")}")', 2)
             w(')', 1)
 

@@ -2,13 +2,21 @@
 
 Generators for a KiCad symbol, footprint and 3D model of the Iridium Certus 9704 L-band transceiver module (88-pad LGA, 31.5 x 42.0 mm).
 
-![Angled view](https://github.com/ndoo/iridium-9704-kicad-lib/releases/latest/download/render-angled.png)
-![Top view](https://github.com/ndoo/iridium-9704-kicad-lib/releases/latest/download/render-top.png)
-![Footprint](https://github.com/ndoo/iridium-9704-kicad-lib/releases/latest/download/render-footprint.png)
-![Symbol](https://github.com/ndoo/iridium-9704-kicad-lib/releases/latest/download/render-symbol.png)
-![Rotating view](https://github.com/ndoo/iridium-9704-kicad-lib/releases/latest/download/render-rotating.gif)
+<table>
+  <tr>
+    <td width="50%"><img src="https://ndoo.github.io/iridium-9704-kicad-lib/render-angled.png" alt="Angled view of the 3D model"></td>
+    <td width="50%"><img src="https://ndoo.github.io/iridium-9704-kicad-lib/render-top.png" alt="Top view of the 3D model"></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="https://ndoo.github.io/iridium-9704-kicad-lib/render-footprint.png" alt="Footprint"></td>
+    <td width="50%"><img src="https://ndoo.github.io/iridium-9704-kicad-lib/render-symbol.png" alt="Symbol"></td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center"><img src="https://ndoo.github.io/iridium-9704-kicad-lib/render-rotating.gif" alt="Rotating view of the 3D model" width="50%"></td>
+  </tr>
+</table>
 
-The images are built by the workflow and attached to each release; they show the label artwork, so they are not committed, and they appear here once a release exists.
+The images are built from `main` by the workflow and published to GitHub Pages. They show the label artwork, so they are not committed.
 
 This repository contains only original source: the generators, the pad data, the build system and CI. It contains no built files and no third-party material. Everything built goes to `out/`, and third-party inputs are downloaded to `third_party/` at build time; both are gitignored. The GitHub Actions workflow builds the library and attaches the zip to a GitHub Release for `v*` tags.
 
@@ -40,6 +48,17 @@ Output layout:
 
 Footprint UUIDs are derived from fixed keys, so rebuilds are byte-identical.
 
+## Testing and CI
+
+There are no unit tests. Changes are checked by the GitHub Actions workflow, which runs on every pull request and on pushes to `main`:
+
+- `build` runs `make package`, `make check CHECK_STEP=1` (pad and pin counts, non-empty STEP) and `make render`, and uploads the library zip and the renders.
+- `klc` runs the KiCad Library Convention checks on the footprint and symbol with `make klc`.
+- `pages` publishes the renders to GitHub Pages on pushes to `main`.
+- `release` attaches the zip and renders to a GitHub Release for `v*` tags.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for running the same checks locally.
+
 ## Using the library in KiCad
 
 Unzip the release zip, then:
@@ -63,3 +82,11 @@ Unzip the release zip, then:
 | `timesbd` | `times32.exe` from the SourceForge corefonts project, plus raw GitHub and CDN copies of the same file | Microsoft core fonts EULA: redistribution of the unmodified original only |
 
 The release zip contains content derived from these inputs; responsibility for distributing it rests with whoever publishes it. `FETCH_UA` sets the download User-Agent, and `FETCH_MIRROR_FIRST=<substring>` tries a matching mirror first. Every mirror must serve bytes matching its recorded sha256; `make verify` checks the fetched files and `python tools/fetch.py --check-mirrors` downloads and checks every mirror.
+
+## License
+
+The source in this repository is released under the [MIT License](LICENSE). The built release zip also contains content derived from the third-party inputs above, which the MIT License does not cover.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Coding agents should also read [AGENTS.md](AGENTS.md).

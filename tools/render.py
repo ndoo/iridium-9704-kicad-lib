@@ -7,8 +7,8 @@ rotating animation) and exports 2D images of the footprint and the symbol.
 
 Usage: python tools/render.py [--out out/render] [--lib out]
 Environment: KICAD_CLI is the kicad-cli command (default: kicad-cli); RSVG is
-rsvg-convert (default: rsvg-convert). Commands run quietly and their output is shown
-only on failure; RENDER_VERBOSE=1 echoes every command and its output.
+rsvg-convert (default: rsvg-convert). Each image gets a progress line; command output
+is shown only on failure, and RENDER_VERBOSE=1 echoes every command and its output.
 """
 
 import argparse
@@ -97,11 +97,15 @@ def pad_svg(path, margin):
         f.write(text[:m.start()] + new + text[m.end():])
 
 
-def run(cmd, env=None):
+def step(msg):
+    print("render:", msg, flush=True)
+
+
+def run(cmd, env=None, stream=False):
     verbose = bool(os.environ.get("RENDER_VERBOSE"))
     if verbose:
         print("+", " ".join(shlex.quote(c) for c in cmd), flush=True)
-    res = subprocess.run(cmd, env=env, capture_output=not verbose, text=True)
+    res = subprocess.run(cmd, env=env, capture_output=not (verbose or stream), text=True)
     if res.returncode:
         sys.stderr.write((res.stdout or "") + (res.stderr or ""))
         sys.exit(f"render: failed: {' '.join(shlex.quote(c) for c in cmd)}")
@@ -129,37 +133,45 @@ def main():
         with open(board, "w") as f:
             f.write(board_text(footprint))
 
-        def render(name, *extra, size=(1600, 1280), quality="high", background="transparent", zoom=1):
-            run(cli + ["pcb", "render", "--width", str(size[0]), "--height", str(size[1]),
-                       "--quality", quality, "--background", background, "--zoom", str(zoom),
-                       *extra, "-o", os.path.join(out, name), board], env=env)
+        def render(name, *extra):
+            step(name)
+            run(cli + ["pcb", "render", "--background", "transparent", *extra,
+                       "-o", os.path.join(out, name), board], env=env)
 
         render("render-top.png", "--side", "top")
         render("render-bottom.png", "--side", "bottom")
-        render("render-angled.png", "--rotate", "-50,0,25", "--perspective", zoom=0.8)
+        render("render-angled.png", "--rotate", "-50,0,25", "--perspective", "--zoom", "0.8")
 
-        # 3 degrees per frame, as in the kicad-render-pcb action; 40 ms per frame gives
-        # one turn in 4.8 s
-        frames = []
-        for i, angle in enumerate(range(0, 360, 3)):
-            frame = os.path.join(tmp, f"frame{i:03d}.png")
-            run(cli + ["pcb", "render", "--width", "400", "--height", "320", "--quality", "basic",
-                       "--background", "opaque", "--zoom", "0.8", "--rotate", f"-50,0,{angle}", "--perspective",
-                       "-o", frame, board], env=env)
-            frames.append(Image.open(frame).convert("RGB"))
+        # Same frames as the kicad-render-pcb action: 300x300, zoom 0.7, 3 degrees per
+        # step about Y; 40 ms per frame gives one turn in 4.8 s
+        angles = range(0, 360, 3)
+        step(f"render-rotating.gif ({len(angles)} frames)")
+        frames_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "render-frames.sh")
+        frames_env = dict(env)
+        if os.path.basename(cli[0]) == "kicad-cli-docker.sh":
+            frames_env["KICAD_DOCKER_CMD"] = "sh"
+            frames_cmd = cli + [frames_script, tmp]
+        else:
+            frames_cmd = ["sh", frames_script, tmp]
+        run(frames_cmd, env=frames_env, stream=True)
+        frames = [Image.open(os.path.join(tmp, f"frame{i:03d}.png")).convert("RGB")
+                  for i in range(len(angles))]
         frames[0].save(os.path.join(out, "render-rotating.gif"), save_all=True,
                        append_images=frames[1:], duration=40, loop=0, optimize=True)
 
+        step("render-footprint.png")
         run(cli + ["fp", "export", "svg", "--footprint", LIB, "--layers",
                    "F.Cu,F.Mask,F.SilkS,F.Fab,F.CrtYd,Dwgs.User", "-o", tmp,
                    os.path.join(lib, f"{LIB}.pretty")], env=env)
         pad_svg(os.path.join(tmp, f"{LIB}.svg"), 2.5)
         run([rsvg, "-w", "1600", "-b", "white", os.path.join(tmp, f"{LIB}.svg"),
              "-o", os.path.join(out, "render-footprint.png")])
+        step("render-symbol.png")
         run(cli + ["sym", "export", "svg", "-o", tmp, symbols], env=env)
         run([rsvg, "-w", "1200", "-b", "white", os.path.join(tmp, f"{LIB}_unit1.svg"),
              "-o", os.path.join(out, "render-symbol.png")])
-    print("wrote", ", ".join(sorted(os.listdir(out))))
+    for name in sorted(os.listdir(out)):
+        print(f"{os.path.getsize(os.path.join(out, name)):>9}  {name}")
 
 
 if __name__ == "__main__":

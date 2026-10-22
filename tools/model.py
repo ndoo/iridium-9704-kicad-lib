@@ -31,6 +31,7 @@ from OCP.Bnd import Bnd_Box
 from OCP.GProp import GProp_GProps
 from OCP.Geom import Geom_BezierCurve
 from OCP.Interface import Interface_Static
+from OCP.Message import Message, Message_Gravity
 from OCP.Quantity import Quantity_Color, Quantity_TOC_RGB
 from OCP.STEPCAFControl import STEPCAFControl_Reader, STEPCAFControl_Writer
 from OCP.STEPControl import STEPControl_AsIs, STEPControl_Reader, STEPControl_Writer
@@ -103,6 +104,7 @@ def main_can(args):
     doc = TDocStd_Document(TCollection_ExtendedString("STEP"))
     reader = STEPCAFControl_Reader()
     reader.SetNameMode(True)
+    print(f"Reading {args.vendor}")
     if not reader.ReadFile(args.vendor) == 1:
         die(f"cannot read {args.vendor}")
     if not reader.Transfer(doc):
@@ -138,6 +140,7 @@ def main_can(args):
     Interface_Static.SetCVal_s("write.step.schema", "AP214")
     writer = STEPControl_Writer()
     writer.Transfer(shape, STEPControl_AsIs)
+    print(f"Writing {args.out}")
     if writer.Write(args.out) != 1:
         die(f"cannot write {args.out}")
     print("can bbox (%.3f, %.3f, %.3f) -> (%.3f, %.3f, %.3f)" % (x0, y0, z0, x1, y1, z1))
@@ -529,6 +532,7 @@ def quarter_turn(shape):
 
 
 def main_assemble(args):
+    print(f"Reading {args.label}")
     label_faces, failed, too_small = load_svg_faces(args.label)
     print(f"Created {len(label_faces)} faces, {failed} failed, {too_small} too small")
     can = load_can(args.can)
@@ -550,6 +554,7 @@ def main_assemble(args):
     label_color = rgb(0.10, 0.10, 0.10)
 
     # Each face is added and coloured on its own; compound colours do not propagate
+    print(f"Adding {len(label_faces) + 3} shapes")
     for shape, color in [(pcb, pcb_color), (can, can_color), (plate, white_color)]:
         color_tool.SetColor(shape_tool.AddShape(quarter_turn(shape)), color, color_type)
     for face in label_faces:
@@ -560,6 +565,7 @@ def main_assemble(args):
     writer.SetNameMode(True)
     Interface_Static.SetCVal_s("write.step.schema", "AP214")
     writer.Transfer(doc, STEPControl_AsIs)
+    print(f"Writing {args.out}")
     if writer.Write(args.out) != 1:
         sys.exit(f"model: cannot write {args.out}")
 
@@ -583,6 +589,9 @@ def main():
     p.add_argument("--can", required=True, help="shielding can STEP")
     p.add_argument("--out", required=True, help="output STEP")
     args = ap.parse_args()
+    # The STEP writer prints a statistics banner per transferred shape
+    for printer in Message.DefaultMessenger_s().Printers():
+        printer.SetTraceLevel(Message_Gravity.Message_Warning)
     {"can": main_can, "assemble": main_assemble}[args.cmd](args)
 
 

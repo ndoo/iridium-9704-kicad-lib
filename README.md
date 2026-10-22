@@ -71,3 +71,7 @@ Unzip the release zip, then:
 | `timesbd` | `times32.exe` from the SourceForge corefonts project, plus raw GitHub and CDN copies of the same file | Microsoft core fonts EULA: redistribution of the unmodified original only |
 
 The release zip contains content derived from these inputs; responsibility for distributing it rests with whoever publishes it. `FETCH_UA` sets the download User-Agent, and `FETCH_MIRROR_FIRST=<substring>` tries a matching mirror first. Every mirror must serve bytes matching its recorded sha256; `make verify` checks the fetched files and `python tools/fetch.py --check-mirrors` downloads and checks every mirror.
+
+## License
+
+The source in this repository is released under the [MIT License](LICENSE). The built release zip also contains content derived from the third-party inputs above, which the MIT License does not cover.

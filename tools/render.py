@@ -118,6 +118,13 @@ def fit(path, aspect=None, margin=0.04):
     out.save(path, optimize=True)
 
 
+def gif_frame(img):
+    """Palette frame with index 255 transparent; GIF has no partial alpha."""
+    frame = img.convert("RGB").quantize(255)
+    frame.paste(255, mask=img.getchannel("A").point(lambda a: 255 if a < 128 else 0))
+    return frame
+
+
 def step(msg):
     print("render:", msg, flush=True)
 
@@ -179,10 +186,11 @@ def main():
         else:
             frames_cmd = ["sh", frames_script, tmp]
         run(frames_cmd, env=frames_env, stream=True)
-        frames = [Image.open(os.path.join(tmp, f"frame{i:03d}.png")).convert("RGB")
+        frames = [gif_frame(Image.open(os.path.join(tmp, f"frame{i:03d}.png")).convert("RGBA"))
                   for i in range(len(angles))]
         frames[0].save(os.path.join(out, "render-rotating.gif"), save_all=True,
-                       append_images=frames[1:], duration=40, loop=0, optimize=True)
+                       append_images=frames[1:], duration=40, loop=0, optimize=False,
+                       transparency=255, disposal=2)
 
         step("render-footprint.png")
         run(cli + ["fp", "export", "svg", "--footprint", LIB, "--layers",

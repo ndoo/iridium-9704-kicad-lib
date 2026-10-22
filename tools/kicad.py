@@ -14,6 +14,7 @@ Usage:
 import argparse
 import json
 import os
+import re
 import uuid as _uuid
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -44,6 +45,65 @@ def _make_u():
     return _u
 
 
+def _n(v, digits=6):
+    """Format a number the way KiCad writes it: no trailing zeros, no "-0"."""
+    t = f"{v:.{digits}f}".rstrip("0").rstrip(".")
+    return "0" if t in ("", "-0") else t
+
+
+# KiCad's layer order, which sorts the graphic items within a footprint
+_LAYER_ORDER = ["F.Cu", "B.Cu", "B.Adhes", "F.Adhes", "B.Paste", "F.Paste",
+                "B.SilkS", "F.SilkS", "B.Mask", "F.Mask", "Dwgs.User",
+                "Cmts.User", "Eco1.User", "Eco2.User", "Edge.Cuts", "Margin",
+                "B.CrtYd", "F.CrtYd", "B.Fab", "F.Fab"]
+_SHAPE_ORDER = ["fp_line", "fp_rect", "fp_arc", "fp_circle", "fp_poly"]
+_FP_HEAD = ("version", "generator", "generator_version", "layer", "descr",
+            "tags", "property", "attr", "duplicate_pad_numbers_are_jumpers")
+
+
+def _nm(value):
+    return round(float(value) * 1e6)
+
+
+def _kind(block):
+    return block[0].strip()[1:].split()[0]
+
+
+def _fp_sort_key(block):
+    """Sort key placing a footprint item where KiCad's serializer would."""
+    text = "\n".join(block)
+    kind = _kind(block)
+
+    def nums(tag):
+        m = re.search(rf"\({tag} ([^)]*)\)", text)
+        return tuple(_nm(v) for v in m.group(1).split()) if m else ()
+
+    if kind == "pad":
+        number = re.match(r'\t\(pad "([^"]*)"', block[0]).group(1)
+        return (2, int(number), nums("at"), nums("size"))
+    layer = _LAYER_ORDER.index(re.search(r'\(layer "([^"]+)"\)', text).group(1))
+    if kind == "fp_text":
+        return (1, layer, 0, nums("at"))
+    pts = tuple(_nm(v) for v in re.findall(r"\(xy ([^)]*)\)", text)
+                for v in v.split()) if kind == "fp_poly" else ()
+    return (0, layer, _SHAPE_ORDER.index(kind),
+            nums("start") or nums("center"), nums("end"), pts)
+
+
+def _fp_sort(lines):
+    """Order the items of a footprint the same way KiCad saves them."""
+    blocks = []
+    for line in lines[1:-1]:
+        if line.startswith("\t(") and not line.startswith("\t\t"):
+            blocks.append([])
+        blocks[-1].append(line)
+    head = [b for b in blocks if _kind(b) in _FP_HEAD]
+    body = sorted((b for b in blocks if _kind(b) in _SHAPE_ORDER + ["fp_text", "pad"]),
+                  key=_fp_sort_key)
+    tail = [b for b in blocks if b not in head and b not in body]
+    return [lines[0]] + [l for b in head + body + tail for l in b] + [lines[-1]]
+
+
 def rot(x, y):
     """Quarter turn clockwise on the board (KiCad footprint coordinates have y down)."""
     return -y, x
@@ -51,9 +111,68 @@ def rot(x, y):
 
 def generate_footprint(pin_data):
     """Build the complete .kicad_mod content string."""
+
+    # KLC-driven parameters
+
+    # ==================================================================
+    # KLC F5.2: Fabrication layer requirements
+    # Ordered first as other sections reference the mechanical outline
+    # ==================================================================
+
+    # KLC F5.2.1.a: Outline uses line width between {0.10mm and 0.15mm}
+    # (recommended 0.10mm)
+    fab_line_width = 0.1
+
+    # KLC F5.2.2.b: Bevel should be 1mm or 25% of package size
+    # (whichever is smaller)
+    fab_chamfer = 1.0
+
+    # ==================================================================
+    # KLC F5.1: Silkscreen layer requirements
+    # ==================================================================
+
+    # KLC F5.1.1.a: Text size = 1.00mm
+    silk_font_sz = (1, 1)
+
+    # KLC F5.1.1.b: Text thickness = 0.15mm
+    silk_font_thickness = 0.15
+
+    # KLC F5.1.2.a: Silkscreen line width should nominally be 0.12mm
+    silk_line_width = 0.12
+
+    # KLC F5.1.4: For SMD footprints, silkscreen must be fully visible
+    # after boards assembly (no silkscreen allowed under component)
+    #
+    # + KLC F5.4: Elements on the graphic layer should not overlap
+    silk_offset = 0 + silk_line_width / 2 + fab_line_width / 2
+
+    # KLC F5.1.Polarity.1.a: It should positioned inside the courtyard to
+    # prevent silkscreen overlap
+    silk_pin1_gap = 0
+    silk_pin1_size = 0.5 - silk_line_width * 1.5
+
+    # ==================================================================
+    # KLC F5.3: Courtyard layer requirements
+    # ==================================================================
+
+    # F5.3.1: Courtyard uses 0.05mm line width
+    crt_line_width = 0.05
+
+    # F5.3.5
+    # Unless otherwise specified, clearance is 0.25mm. This shrinks to
+    # 0.15mm for parts smaller than 1.5mm in any dimension.
+    #
+    # Note: Increased for more assembly tolerance and to accommodate the
+    # silkscreen gap on the pin-1 corner
+    crt_offset = 0.5
+
+    # KLC F6.3.1: By default, pads for SMD footprints should use
+    # only the following layers
+    pad_smd_layers = '"F.Cu" "F.Mask" "F.Paste"'
+
     pads_raw = pin_data["pads"]
-    half_w = 15.75   # module half-width  (31.5 / 2)
-    half_h = 21.0    # module half-height (42.0 / 2)
+    half_w = pin_data["mod_w"] / 2
+    half_h = pin_data["mod_h"] / 2
 
     out = []
     _u = _make_u()
@@ -76,9 +195,10 @@ def generate_footprint(pin_data):
     # ------------------------------------------------------------------
     # Properties (each with unlocked + uuid)
     # ------------------------------------------------------------------
-    def _prop(name, value, at_x, at_y, layer, hide=False, font_sz=(1, 1)):
+
+    def _prop(name, value, at_x, at_y, layer, hide=False, font_sz=silk_font_sz):
         w(f'(property "{name}" "{value}"', 1)
-        w(f'(at {at_x} {at_y} 0)', 2)
+        w(f'(at {_n(at_x)} {_n(at_y)} 0)', 2)
         w('(unlocked yes)', 2)
         w(f'(layer "{layer}")', 2)
         if hide:
@@ -87,14 +207,19 @@ def generate_footprint(pin_data):
         w('(effects', 2)
         w('(font', 3)
         w(f'(size {font_sz[0]} {font_sz[1]})', 4)
-        w('(thickness 0.15)', 4)
+        w(f'(thickness {silk_font_thickness})', 4)
         w(')', 3)
         w(')', 2)
         w(')', 1)
 
-    text_y = half_w + 0.5 + 1.5     # 1.5 mm beyond the courtyard
+    text_y = half_w + 0.5 + 1            # 1 mm beyond the courtyard
+
+    # KLC F5.1.1: Reference Designator must be drawn on F.SilkS layer
     _prop("Reference", "REF**",          0, -text_y, "F.SilkS")
+
+    # KLC F5.2.3: Component value (footprint name) must be displayed on the F.Fab layer
     _prop("Value",     "Iridium_9704",   0,  text_y, "F.Fab")
+
     _prop("Datasheet", "",               0,   0.0, "F.Fab", hide=True,
           font_sz=(1.27, 1.27))
     _prop("Description", "",             0,   0.0, "F.Fab", hide=True,
@@ -103,50 +228,56 @@ def generate_footprint(pin_data):
     # ------------------------------------------------------------------
     # Attributes
     # ------------------------------------------------------------------
+
+    # KLC F6.1: Footprint component type must be set to surface mount
     w('(attr smd)', 1)
+
     w('(duplicate_pad_numbers_are_jumpers no)', 1)
 
     # ------------------------------------------------------------------
-    # Silkscreen outline (F.SilkS)
+    # KLC F5.1 Silkscreen layer requirements:
+    # The silkscreen is printed to the external surface of a PCB to aid
+    # in component identification and orientation. Typically this layer
+    # contains the component RefDes to locate components on the board
+    # after assembly.
     # ------------------------------------------------------------------
-    silk_off = 0.3
-    sx = half_w + silk_off     # 16.05
-    sy = half_h + silk_off     # 21.30
+    sx = half_w + silk_offset
+    sy = half_h + silk_offset
 
-    # Simple rectangular silkscreen outline
+    # Simple rectangular silkscreen outline with gap on the pin-1 triangle corner
     silk_segs = [
-        ((-sx, -sy), ( sx, -sy)),   # top
-        (( sx, -sy), ( sx,  sy)),   # right
-        (( sx,  sy), (-sx,  sy)),   # bottom
-        ((-sx,  sy), (-sx, -sy)),   # left
+        ((-sx + silk_line_width * 2, -sy), ( sx, -sy                      )),   # top
+        (( sx,                       -sy), ( sx,  sy                      )),   # right
+        (( sx,                        sy), (-sx,  sy                      )),   # bottom
+        ((-sx,                        sy), (-sx, -sy + silk_line_width * 2)),   # left
     ]
     for (x1, y1), (x2, y2) in silk_segs:
         (x1, y1), (x2, y2) = rot(x1, y1), rot(x2, y2)
         w('(fp_line', 1)
-        w(f'(start {x1:.3f} {y1:.3f})', 2)
-        w(f'(end {x2:.3f} {y2:.3f})', 2)
+        w(f'(start {_n(x1, 3)} {_n(y1, 3)})', 2)
+        w(f'(end {_n(x2, 3)} {_n(y2, 3)})', 2)
         w('(stroke', 2)
-        w('(width 0.12)', 3)
+        w(f'(width {silk_line_width})', 3)
         w('(type solid)', 3)
         w(')', 2)
         w('(layer "F.SilkS")', 2)
         w(f'(uuid "{_u()}")', 2)
         w(')', 1)
 
-    # Pin 1 marker: the 0.5 mm right-angle triangle of RF_Module/Astrocast_AST50147-00,
-    # right angle towards the part. Edge-to-edge gap to the silkscreen lines is one
-    # line width (0.12 mm, the most common spacing in KiCad's footprints); the vertex is
-    # that plus half the silk width and half the marker stroke from each silk centreline
-    gap = 0.12 + 0.06 + 0.06
-    leg = 0.5
-    px, py = -sx - gap, -sy - gap
-    tri = [rot(*p) for p in ((px, py), (px - leg, py), (px, py - leg), (px, py))]
+    # ------------------------------------------------------------------
+    # KLC F5.1.6:
+    # Polarity marking / Pin-1 designator must be drawn on the F.SilkS
+    # layer
+    # ------------------------------------------------------------------
+
+    px, py = -sx - silk_pin1_gap, -sy - silk_pin1_gap
+    tri = [rot(*p) for p in ((px, py), (px - silk_pin1_size, py), (px, py - silk_pin1_size), (px, py))]
     w('(fp_poly', 1)
     w('(pts', 2)
-    w(' '.join(f'(xy {x:.3f} {y:.3f})' for x, y in tri), 3)
+    w(' '.join(f'(xy {_n(x, 3)} {_n(y, 3)})' for x, y in tri), 3)
     w(')', 2)
     w('(stroke', 2)
-    w('(width 0.12)', 3)
+    w(f'(width {silk_line_width})', 3)
     w('(type solid)', 3)
     w(')', 2)
     w('(fill yes)', 2)
@@ -155,11 +286,47 @@ def generate_footprint(pin_data):
     w(')', 1)
 
     # ------------------------------------------------------------------
-    # Courtyard (F.CrtYd)
+    # KLC F5.2: Fabrication layer requirements
+    # The fabrication layers are used to display the simplified
+    # mechanical outline of components on the PCB.
     # ------------------------------------------------------------------
-    co = 0.5   # courtyard offset from body edge
-    cx = half_w + co    # 16.25
-    cy = half_h + co    # 21.50
+
+    # KLC F5.2.2: Footprint polarisation / location of pin-1 is drawn
+    fab_verts = [
+        (-half_w + fab_chamfer, -half_h               ),    # after chamfer on top edge
+        ( half_w,               -half_h               ),    # top-right
+        ( half_w,                half_h               ),    # bottom-right
+        (-half_w,                half_h               ),    # bottom-left
+        (-half_w,              -(half_h - fab_chamfer)),    # left edge up to chamfer
+        (-half_w + fab_chamfer, -half_h               ),    # close back to start
+    ]
+    for i in range(len(fab_verts) - 1):
+        x1, y1 = rot(*fab_verts[i])
+        x2, y2 = rot(*fab_verts[i + 1])
+        w('(fp_line', 1)
+        w(f'(start {_n(x1, 3)} {_n(y1, 3)})', 2)
+        w(f'(end {_n(x2, 3)} {_n(y2, 3)})', 2)
+        w('(stroke', 2)
+        w(f'(width {fab_line_width})', 3)
+        w('(type solid)', 3)
+        w(')', 2)
+        w('(layer "F.Fab")', 2)
+        w(f'(uuid "{_u()}")', 2)
+        w(')', 1)
+
+    # ------------------------------------------------------------------
+    # F5.3 Courtyard layer requirements:
+    # The component courtyard is defined as the smallest rectangular
+    # area that provides a minimum electrical and mechanical clearance
+    # around the combined component body and land pattern boundaries. It
+    # is allowed to create a contoured courtyard area using a polygon
+    # instead of a simple rectangle. (IPC-7351C)
+    #
+    # The courtyard should include any extra required clearance for
+    # mating connectors (for example).
+    # ------------------------------------------------------------------
+    cx = half_w + crt_offset    # 16.25
+    cy = half_h + crt_offset    # 21.50
     crt_segs = [
         ((-cx, -cy), ( cx, -cy)),
         (( cx, -cy), ( cx,  cy)),
@@ -169,39 +336,17 @@ def generate_footprint(pin_data):
     for (x1, y1), (x2, y2) in crt_segs:
         (x1, y1), (x2, y2) = rot(x1, y1), rot(x2, y2)
         w('(fp_line', 1)
-        w(f'(start {x1:.3f} {y1:.3f})', 2)
-        w(f'(end {x2:.3f} {y2:.3f})', 2)
+
+        # KLC F5.3.2: All courtyard line elements are placed on a 0.01mm
+        # grid
+        w(f'(start {_n(x1, 2)} {_n(y1, 2)})', 2)
+        w(f'(end {_n(x2, 2)} {_n(y2, 2)})', 2)
+
         w('(stroke', 2)
-        w('(width 0.05)', 3)
+        w(f'(width {crt_line_width})', 3)
         w('(type default)', 3)
         w(')', 2)
         w('(layer "F.CrtYd")', 2)
-        w(f'(uuid "{_u()}")', 2)
-        w(')', 1)
-
-    # ------------------------------------------------------------------
-    # Fabrication layer outline with pin-1 chamfer (F.Fab)
-    # ------------------------------------------------------------------
-    chamfer = 2.0
-    fab_verts = [
-        (-half_w + chamfer, -half_h),          # after chamfer on top edge
-        ( half_w,           -half_h),          # top-right
-        ( half_w,            half_h),          # bottom-right
-        (-half_w,            half_h),          # bottom-left
-        (-half_w,           -(half_h - chamfer)),  # left edge up to chamfer
-        (-half_w + chamfer, -half_h),          # close back to start
-    ]
-    for i in range(len(fab_verts) - 1):
-        x1, y1 = rot(*fab_verts[i])
-        x2, y2 = rot(*fab_verts[i + 1])
-        w('(fp_line', 1)
-        w(f'(start {x1:.3f} {y1:.3f})', 2)
-        w(f'(end {x2:.3f} {y2:.3f})', 2)
-        w('(stroke', 2)
-        w('(width 0.1)', 3)
-        w('(type solid)', 3)
-        w(')', 2)
-        w('(layer "F.Fab")', 2)
         w(f'(uuid "{_u()}")', 2)
         w(')', 1)
 
@@ -215,8 +360,8 @@ def generate_footprint(pin_data):
     w(f'(uuid "{_u()}")', 2)
     w('(effects', 2)
     w('(font', 3)
-    w('(size 1 1)', 4)
-    w('(thickness 0.15)', 4)
+    w(f'(size {silk_font_sz[0]} {silk_font_sz[1]})', 4)
+    w(f'(thickness {silk_font_thickness})', 4)
     w(')', 3)
     w(')', 2)
     w(')', 1)
@@ -237,9 +382,9 @@ def generate_footprint(pin_data):
 
         if pin == 1:
             w(f'(pad "{pin}" smd roundrect', 1)
-            w(f'(at {pcx:.4f} {pcy:.4f})', 2)
-            w(f'(size {ipc_w:.4f} {ipc_h:.4f})', 2)
-            w('(layers "F.Cu" "F.Paste" "F.Mask")', 2)
+            w(f'(at {_n(pcx, 2)} {_n(pcy, 2)})', 2)
+            w(f'(size {_n(ipc_w, 2)} {_n(ipc_h, 2)})', 2)
+            w(f'(layers {pad_smd_layers})', 2)
             w('(roundrect_rratio 0.25)', 2)
             w('(chamfer_ratio 0.444)', 2)
             w('(chamfer top_right)', 2)
@@ -247,9 +392,9 @@ def generate_footprint(pin_data):
             w(')', 1)
         else:
             w(f'(pad "{pin}" smd roundrect', 1)
-            w(f'(at {pcx:.4f} {pcy:.4f})', 2)
-            w(f'(size {ipc_w:.4f} {ipc_h:.4f})', 2)
-            w('(layers "F.Cu" "F.Paste" "F.Mask")', 2)
+            w(f'(at {_n(pcx, 2)} {_n(pcy, 2)})', 2)
+            w(f'(size {_n(ipc_w, 2)} {_n(ipc_h, 2)})', 2)
+            w(f'(layers {pad_smd_layers})', 2)
             w('(roundrect_rratio 0.25)', 2)
             w(f'(uuid "{_u(f"pad:{pin}")}")', 2)
             w(')', 1)
@@ -264,7 +409,17 @@ def generate_footprint(pin_data):
     ]
     for hx, hy in (rot(*h) for h in hole_positions):
         r = 0.8
-        w(f'(fp_circle (center {hx} {hy}) (end {hx+r} {hy}) (stroke (width 0.1) (type solid)) (layer "Dwgs.User") (uuid "{_u()}"))', 1)
+        w('(fp_circle', 1)
+        w(f'(center {_n(hx)} {_n(hy)})', 2)
+        w(f'(end {_n(hx + r)} {_n(hy)})', 2)
+        w('(stroke', 2)
+        w('(width 0.1)', 3)
+        w('(type solid)', 3)
+        w(')', 2)
+        w('(fill no)', 2)
+        w('(layer "Dwgs.User")', 2)
+        w(f'(uuid "{_u()}")', 2)
+        w(')', 1)
 
     # ------------------------------------------------------------------
     # Ground stitching vias (2 per pad, +/-0.5 mm along long axis)
@@ -287,11 +442,12 @@ def generate_footprint(pin_data):
             offsets = [(vx0, vy0 - 0.5), (vx0, vy0 + 0.5)]
 
         for vi, (vx, vy) in enumerate(rot(*o) for o in offsets):
-            w('(pad "" thru_hole circle', 1)
-            w(f'(at {vx:.4f} {vy:.4f})', 2)
-            w('(size 0.600 0.600)', 2)
-            w('(drill 0.300)', 2)
-            w('(layers "*.Cu" "*.Mask")', 2)
+            w(f'(pad "{pad["pin"]}" thru_hole circle', 1)
+            w(f'(at {_n(vx, 2)} {_n(vy, 2)})', 2)
+            w('(size 0.5 0.5)', 2)
+            w('(drill 0.2)', 2)
+            w('(layers "*.Cu")', 2)
+            w('(remove_unused_layers no)', 2)
             w(f'(uuid "{_u(f"via:{vp}:{vi}")}")', 2)
             w(')', 1)
 
@@ -313,7 +469,7 @@ def generate_footprint(pin_data):
 
     w(')')
 
-    return "\n".join(out) + "\n"
+    return "\n".join(_fp_sort(out)) + "\n"
 
 
 # ---------------------------------------------------------------------------
@@ -327,8 +483,8 @@ GND_PINS = [1, 2, 4, 8, 11, 14, 17, 18, 22, 25, 31, 32, 45, 47, 48,
 NC_PINS = [28, 29, 30, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59,
            67, 68, 69, 70, 71, 72, 73, 74, 81, 82, 83, 84, 85, 86, 87, 88]
 
-V_BAT_MAIN_PINS = [34, 35, 36]       # pin 34 visible, 35-36 hidden
-V_BAT_PA_PINS   = list(range(37, 45))  # pin 37 visible, 38-44 hidden
+V_BAT_MAIN_PINS = [34, 35, 36]
+V_BAT_PA_PINS   = list(range(37, 45))
 
 # Signal pins: pin_number -> (name, electrical_type)
 SIGNAL_PINS = {
@@ -422,8 +578,34 @@ BOTTOM_Y = BODY_BOTTOM - SPACING     # -27.94
 # Helpers
 # ---------------------------------------------------------------------------
 def _r(v):
-    """Round a float to 2 decimal places to avoid FP noise."""
-    return round(v, 2)
+    """Format a float to 2 decimal places to avoid FP noise."""
+    return _n(v, 2)
+
+
+def _unstack(number):
+    """Return the pin numbers covered by a plain or native-stack number."""
+    if not number.startswith("["):
+        return [number]
+    out = []
+    for part in number[1:-1].split(","):
+        lo, _, hi = part.partition("-")
+        out.extend(range(int(lo), int(hi or lo) + 1))
+    return out
+
+
+def _stack(numbers):
+    """Return the native pin stack number for a sorted list of pin numbers."""
+    runs, i = [], 0
+    while i < len(numbers):
+        j = i
+        while j + 1 < len(numbers) and numbers[j + 1] == numbers[j] + 1:
+            j += 1
+        if j - i >= 2:
+            runs.append(f"{numbers[i]}-{numbers[j]}")
+        else:
+            runs.extend(str(n) for n in numbers[i:j + 1])
+        i = j + 1
+    return "[" + ",".join(runs) + "]"
 
 
 def _pin(pin_type, name, number, x, y, angle, hidden=False):
@@ -449,6 +631,12 @@ def _pin(pin_type, name, number, x, y, angle, hidden=False):
         f"\t\t\t\t)\n"
         f"\t\t\t)"
     )
+
+
+def _pin_sort_key(block):
+    """Sort native pin stacks after plain pins, each group by number."""
+    stacked, first = re.search(r'\(number "(\[?)(\d+)', block).groups()
+    return bool(stacked), int(first)
 
 
 def _property(name, value, x, y, hidden=False):
@@ -498,7 +686,7 @@ def generate_symbol():
     parts.append(_property("Reference",   "U",             -10.16, ref_y))
     parts.append(_property("Value",       "Iridium_9704",   10.16, ref_y))
     parts.append(_property("Footprint",   "Iridium_9704:Iridium_9704", 0, -5.08, hidden=True))
-    parts.append(_property("Datasheet",   "",                       0, -7.62, hidden=True))
+    parts.append(_property("Datasheet",   "https://www.iridium.com/products/iridium-certus-9704/", 0, -7.62, hidden=True))
     parts.append(_property("Description",
         "Iridium Certus 9704 L-band satellite transceiver module, 88-pin LGA",
         0, 0, hidden=True))
@@ -511,8 +699,8 @@ def generate_symbol():
     parts.append(
         f"\t\t(symbol \"Iridium_9704_0_1\"\n"
         f"\t\t\t(rectangle\n"
-        f"\t\t\t\t(start {BODY_LEFT} {BODY_TOP})\n"
-        f"\t\t\t\t(end {BODY_RIGHT} {BODY_BOTTOM})\n"
+        f"\t\t\t\t(start {_r(BODY_LEFT)} {_r(BODY_TOP)})\n"
+        f"\t\t\t\t(end {_r(BODY_RIGHT)} {_r(BODY_BOTTOM)})\n"
         f"\t\t\t\t(stroke\n"
         f"\t\t\t\t\t(width 0.254)\n"
         f"\t\t\t\t\t(type default)\n"
@@ -545,22 +733,12 @@ def generate_symbol():
     # V_IO (pin 33)
     pins.append(_pin("power_in", "V_IO", "33", TOP_X[33], TOP_Y, 270))
 
-    # V_BAT_MAIN: pin 34 visible, 35-36 hidden passive at same position
-    pins.append(_pin("power_in", "V_BAT_MAIN", "34", TOP_X[34], TOP_Y, 270))
-    for p in V_BAT_MAIN_PINS[1:]:
-        pins.append(_pin("passive", "V_BAT_MAIN", str(p), TOP_X[34], TOP_Y, 270, hidden=True))
+    # V_BAT_MAIN and V_BAT_PA: one native pin stack each
+    pins.append(_pin("power_in", "V_BAT_MAIN", _stack(V_BAT_MAIN_PINS), TOP_X[34], TOP_Y, 270))
+    pins.append(_pin("power_in", "V_BAT_PA", _stack(V_BAT_PA_PINS), TOP_X[37], TOP_Y, 270))
 
-    # V_BAT_PA: pin 37 visible, 38-44 hidden passive at same position
-    pins.append(_pin("power_in", "V_BAT_PA", "37", TOP_X[37], TOP_Y, 270))
-    for p in V_BAT_PA_PINS[1:]:
-        pins.append(_pin("passive", "V_BAT_PA", str(p), TOP_X[37], TOP_Y, 270, hidden=True))
-
-    # Bottom GND: pin 1 visible power_in, all others hidden passive --------
-    pins.append(_pin("power_in", "GND", "1", 0, BOTTOM_Y, 90))
-    for p in GND_PINS:
-        if p == 1:
-            continue
-        pins.append(_pin("passive", "GND", str(p), 0, BOTTOM_Y, 90, hidden=True))
+    # Bottom GND: one native pin stack ---------------------------------------
+    pins.append(_pin("power_in", "GND", _stack(GND_PINS), 0, BOTTOM_Y, 90))
 
     # NC pins: all hidden no_connect, placed inside the body ----------------
     # Spread them in a grid inside the rectangle
@@ -573,6 +751,8 @@ def generate_symbol():
         nx = nc_x0 + col * 2.54
         ny = nc_y0 - row * 2.54
         pins.append(_pin("no_connect", "NC", str(p), nx, ny, 270, hidden=True))
+
+    pins.sort(key=_pin_sort_key)
 
     unit1 = "\t\t(symbol \"Iridium_9704_1_1\"\n"
     unit1 += "\n".join(pins)
@@ -611,8 +791,8 @@ def main_symbol(out_path):
     _write(out_path, content)
     print(f"Symbol written to {out_path}")
 
-    pin_count = content.count("(pin ")
-    print(f"Total pin entries: {pin_count}")
+    pin_count = sum(len(_unstack(n)) for n in re.findall(r'\(number "([^"]+)"', content))
+    print(f"Total pins: {pin_count}")
     assert pin_count == 88, f"Expected 88 pins, got {pin_count}"
     print("Pin count OK (88).")
 

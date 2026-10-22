@@ -45,6 +45,21 @@ jobs:
           path: out/render/
           if-no-files-found: error
 
+  klc:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Fetch KLC checker
+        run: |
+          git clone --filter=blob:none https://gitlab.com/kicad/libraries/kicad-library-tools.git "$RUNNER_TEMP/klt"
+          git -C "$RUNNER_TEMP/klt" checkout a903a695bf4e69905e9e56548f44dd46cdc1130e
+          pip install pyyaml asteval typing_extensions
+      - run: make footprint symbol
+      - run: make klc KLC_DIR="$RUNNER_TEMP/klt/library_utils"
+
   release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: build

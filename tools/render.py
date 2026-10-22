@@ -20,7 +20,7 @@ import subprocess
 import sys
 import tempfile
 
-from PIL import Image
+from PIL import Image, ImageChops
 
 LIB = "Iridium_9704"
 BOARD_CENTRE = (60.0, 50.0)
@@ -97,6 +97,27 @@ def pad_svg(path, margin):
         f.write(text[:m.start()] + new + text[m.end():])
 
 
+def fit(path, aspect=None, margin=0.04):
+    """Crop a PNG to its content plus a margin (fraction of the longer side), then
+    pad it to width/height = aspect with the background it was cropped against."""
+    img = Image.open(path).convert("RGBA")
+    transparent = img.getchannel("A").getextrema()[0] < 255
+    if transparent:
+        bbox = img.getchannel("A").getbbox()
+        fill = (0, 0, 0, 0)
+    else:
+        bbox = ImageChops.difference(img, Image.new("RGBA", img.size, (255, 255, 255, 255))).getbbox()
+        fill = (255, 255, 255, 255)
+    img = img.crop(bbox)
+    pad = round(max(img.size) * margin)
+    w, h = img.width + 2 * pad, img.height + 2 * pad
+    if aspect:
+        w, h = max(w, round(h * aspect)), max(h, round(w / aspect))
+    out = Image.new("RGBA", (w, h), fill)
+    out.paste(img, ((w - img.width) // 2, (h - img.height) // 2))
+    out.save(path, optimize=True)
+
+
 def step(msg):
     print("render:", msg, flush=True)
 
@@ -138,12 +159,16 @@ def main():
             run(cli + ["pcb", "render", "--background", "transparent", *extra,
                        "-o", os.path.join(out, name), board], env=env)
 
-        render("render-top.png", "--side", "top")
-        render("render-bottom.png", "--side", "bottom")
-        render("render-angled.png", "--rotate", "-50,0,25", "--perspective", "--zoom", "0.8")
+        # Hero 2:1, supporting views square, so each README row has uniform cell shapes
+        render("render-angled.png", "--rotate", "-50,0,25", "--perspective", "--zoom", "0.8",
+               "--width", "2400", "--height", "1350")
+        fit(os.path.join(out, "render-angled.png"), aspect=2)
+        for name, side in (("render-top.png", "top"), ("render-bottom.png", "bottom")):
+            render(name, "--side", side, "--width", "1600", "--height", "1200")
+            fit(os.path.join(out, name), aspect=1)
 
-        # Same frames as the kicad-render-pcb action: 300x300, zoom 0.7, 3 degrees per
-        # step about Y; 40 ms per frame gives one turn in 4.8 s
+        # 400x400, zoom 0.7, 3 degrees per step about Y; 40 ms per frame gives one turn
+        # in 4.8 s
         angles = range(0, 360, 3)
         step(f"render-rotating.gif ({len(angles)} frames)")
         frames_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "render-frames.sh")
@@ -166,10 +191,12 @@ def main():
         pad_svg(os.path.join(tmp, f"{LIB}.svg"), 2.5)
         run([rsvg, "-w", "1600", "-b", "white", os.path.join(tmp, f"{LIB}.svg"),
              "-o", os.path.join(out, "render-footprint.png")])
+        fit(os.path.join(out, "render-footprint.png"))
         step("render-symbol.png")
         run(cli + ["sym", "export", "svg", "-o", tmp, symbols], env=env)
         run([rsvg, "-w", "1200", "-b", "white", os.path.join(tmp, f"{LIB}_unit1.svg"),
              "-o", os.path.join(out, "render-symbol.png")])
+        fit(os.path.join(out, "render-symbol.png"))
     for name in sorted(os.listdir(out)):
         print(f"{os.path.getsize(os.path.join(out, name)):>9}  {name}")
 

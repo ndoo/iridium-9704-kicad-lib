@@ -16,7 +16,7 @@ RENDER_DIR := $(OUT)/render
 VENDOR_STEP := $(THIRD_PARTY)/vendor/RockBLOCK_9704-SMA-2A.step
 FONTS_STAMP := $(THIRD_PARTY)/.fetched
 
-.PHONY: all fetch verify footprint symbol label can step package render check clean distclean
+.PHONY: all fetch verify footprint symbol label can step package render check klc clean distclean
 
 all: footprint symbol step
 
@@ -91,6 +91,12 @@ check: $(FOOTPRINT) $(SYMBOL)
 	@test "$$(grep -Ec '\(pad "[0-9]+" smd' $(FOOTPRINT))" = 88 || { echo "footprint: expected 88 numbered pads"; exit 1; }
 	@test "$$(grep -c '(pin ' $(SYMBOL))" = 52 || { echo "symbol: expected 52 pin entries (88 pins)"; exit 1; }
 	@echo "check OK"
+
+# KLC_DIR is the library_utils directory of a kicad-library-tools checkout.
+KLC_DIR ?= kicad-library-tools/library_utils
+
+klc: $(FOOTPRINT) $(SYMBOL)
+	$(PYTHON) tools/klc_check.py --klc $(KLC_DIR) --lib $(OUT)
 
 clean:
 	rm -rf $(OUT)

@@ -20,12 +20,16 @@ import subprocess
 import sys
 import tempfile
 
-from PIL import Image
+from PIL import Image, ImageChops
 
 LIB = "Iridium_9704"
 BOARD_CENTRE = (60.0, 50.0)
 BOARD_MARGIN = 5.0
 MODULE_SIZE = (42.0, 31.5)   # footprint extent after the quarter turn
+FRAME_STEP = 3       # degrees per rotation frame
+FRAME_SIZE = 400     # pixels
+FRAME_ZOOM = 0.7
+TURN_MS = 4800       # one full turn; GIF delays are in 10 ms units
 
 BOARD_HEADER = """(kicad_pcb
 \t(version 20260206)
@@ -97,6 +101,36 @@ def pad_svg(path, margin):
         f.write(text[:m.start()] + new + text[m.end():])
 
 
+def fit(path, aspect=None, transparent=True, margin=0.04):
+    """Crop a PNG to its content plus a margin, then pad it to width/height = aspect."""
+    img = Image.open(path).convert("RGBA")
+    if transparent:
+        bbox = img.getchannel("A").getbbox()
+        fill = (0, 0, 0, 0)
+    else:
+        bbox = ImageChops.difference(img.convert("RGB"), Image.new("RGB", img.size, "white")).getbbox()
+        fill = (255, 255, 255, 255)
+    if bbox is None:
+        sys.exit(f"render: {os.path.basename(path)} is blank")
+    img = img.crop(bbox)
+    pad = round(max(img.size) * margin)
+    w, h = img.width + 2 * pad, img.height + 2 * pad
+    if aspect:
+        w, h = max(w, round(h * aspect)), max(h, round(w / aspect))
+    out = Image.new("RGBA", (w, h), fill)
+    out.paste(img, ((w - img.width) // 2, (h - img.height) // 2))
+    out.save(path, optimize=True)
+
+
+def gif_frame(img):
+    """Palette frame with index 255 transparent; edges are matted with mid-grey."""
+    matte = Image.new("RGBA", img.size, (128, 128, 128, 255))
+    matte.alpha_composite(img)
+    frame = matte.convert("RGB").quantize(255)
+    frame.paste(255, mask=img.getchannel("A").point(lambda a: 255 if a < 128 else 0))
+    return frame
+
+
 def step(msg):
     print("render:", msg, flush=True)
 
@@ -138,26 +172,30 @@ def main():
             run(cli + ["pcb", "render", "--background", "transparent", *extra,
                        "-o", os.path.join(out, name), board], env=env)
 
-        render("render-top.png", "--side", "top")
-        render("render-bottom.png", "--side", "bottom")
-        render("render-angled.png", "--rotate", "-50,0,25", "--perspective", "--zoom", "0.8")
+        # Hero 2:1, supporting views square, so each README row has uniform cell shapes
+        render("render-angled.png", "--rotate", "-50,0,25", "--perspective", "--zoom", "0.8",
+               "--width", "2400", "--height", "1350")
+        fit(os.path.join(out, "render-angled.png"), aspect=2)
+        for name, side in (("render-top.png", "top"), ("render-bottom.png", "bottom")):
+            render(name, "--side", side, "--width", "1600", "--height", "1200")
+            fit(os.path.join(out, name), aspect=1)
 
-        # Same frames as the kicad-render-pcb action: 300x300, zoom 0.7, 3 degrees per
-        # step about Y; 40 ms per frame gives one turn in 4.8 s
-        angles = range(0, 360, 3)
+        angles = range(0, 360, FRAME_STEP)
         step(f"render-rotating.gif ({len(angles)} frames)")
         frames_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "render-frames.sh")
         frames_env = dict(env)
         if os.path.basename(cli[0]) == "kicad-cli-docker.sh":
             frames_env["KICAD_DOCKER_CMD"] = "sh"
-            frames_cmd = cli + [frames_script, tmp]
+            frames_cmd = cli + [frames_script]
         else:
-            frames_cmd = ["sh", frames_script, tmp]
+            frames_cmd = ["sh", frames_script]
+        frames_cmd += [tmp, str(FRAME_STEP), str(FRAME_SIZE), str(FRAME_ZOOM)]
         run(frames_cmd, env=frames_env, stream=True)
-        frames = [Image.open(os.path.join(tmp, f"frame{i:03d}.png")).convert("RGB")
+        frames = [gif_frame(Image.open(os.path.join(tmp, f"frame{i:03d}.png")).convert("RGBA"))
                   for i in range(len(angles))]
         frames[0].save(os.path.join(out, "render-rotating.gif"), save_all=True,
-                       append_images=frames[1:], duration=40, loop=0, optimize=True)
+                       append_images=frames[1:], duration=round(TURN_MS / len(angles) / 10) * 10, loop=0, optimize=False,
+                       transparency=255, disposal=2)
 
         step("render-footprint.png")
         run(cli + ["fp", "export", "svg", "--footprint", LIB, "--layers",
@@ -166,10 +204,12 @@ def main():
         pad_svg(os.path.join(tmp, f"{LIB}.svg"), 2.5)
         run([rsvg, "-w", "1600", "-b", "white", os.path.join(tmp, f"{LIB}.svg"),
              "-o", os.path.join(out, "render-footprint.png")])
+        fit(os.path.join(out, "render-footprint.png"), aspect=4 / 3, transparent=False)
         step("render-symbol.png")
         run(cli + ["sym", "export", "svg", "-o", tmp, symbols], env=env)
         run([rsvg, "-w", "1200", "-b", "white", os.path.join(tmp, f"{LIB}_unit1.svg"),
              "-o", os.path.join(out, "render-symbol.png")])
+        fit(os.path.join(out, "render-symbol.png"), aspect=4 / 3, transparent=False)
     for name in sorted(os.listdir(out)):
         print(f"{os.path.getsize(os.path.join(out, name)):>9}  {name}")
 

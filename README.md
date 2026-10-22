@@ -4,15 +4,16 @@ Generators for a KiCad symbol, footprint and 3D model of the Iridium Certus 9704
 
 <table>
   <tr>
-    <td width="50%"><img src="https://ndoo.github.io/iridium-9704-kicad-lib/render-angled.png" alt="Angled view of the 3D model"></td>
-    <td width="50%"><img src="https://ndoo.github.io/iridium-9704-kicad-lib/render-top.png" alt="Top view of the 3D model"></td>
+    <td colspan="6" align="center"><a href="https://ndoo.github.io/iridium-9704-kicad-lib/render-angled.png"><img src="https://ndoo.github.io/iridium-9704-kicad-lib/render-angled.png" alt="Angled view of the 3D model" width="800"></a></td>
   </tr>
   <tr>
-    <td width="50%"><img src="https://ndoo.github.io/iridium-9704-kicad-lib/render-footprint.png" alt="Footprint"></td>
-    <td width="50%"><img src="https://ndoo.github.io/iridium-9704-kicad-lib/render-symbol.png" alt="Symbol"></td>
+    <td colspan="2" width="33%" align="center"><a href="https://ndoo.github.io/iridium-9704-kicad-lib/render-top.png"><img src="https://ndoo.github.io/iridium-9704-kicad-lib/render-top.png" alt="Top view of the 3D model" width="280"></a><br><sub>Top</sub></td>
+    <td colspan="2" width="33%" align="center"><a href="https://ndoo.github.io/iridium-9704-kicad-lib/render-bottom.png"><img src="https://ndoo.github.io/iridium-9704-kicad-lib/render-bottom.png" alt="Bottom view of the 3D model" width="280"></a><br><sub>Bottom</sub></td>
+    <td colspan="2" width="33%" align="center"><a href="https://ndoo.github.io/iridium-9704-kicad-lib/render-rotating.gif"><img src="https://ndoo.github.io/iridium-9704-kicad-lib/render-rotating.gif" alt="Rotating view of the 3D model" width="280"></a><br><sub>Rotating</sub></td>
   </tr>
   <tr>
-    <td colspan="2" align="center"><img src="https://ndoo.github.io/iridium-9704-kicad-lib/render-rotating.gif" alt="Rotating view of the 3D model" width="50%"></td>
+    <td colspan="3" align="center"><a href="https://ndoo.github.io/iridium-9704-kicad-lib/render-footprint.png"><img src="https://ndoo.github.io/iridium-9704-kicad-lib/render-footprint.png" alt="Footprint" width="400"></a><br><sub><b>Footprint</b></sub></td>
+    <td colspan="3" align="center"><a href="https://ndoo.github.io/iridium-9704-kicad-lib/render-symbol.png"><img src="https://ndoo.github.io/iridium-9704-kicad-lib/render-symbol.png" alt="Symbol" width="400"></a><br><sub><b>Symbol</b></sub></td>
   </tr>
 </table>
 

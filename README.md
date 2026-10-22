@@ -48,6 +48,17 @@ Output layout:
 
 Footprint UUIDs are derived from fixed keys, so rebuilds are byte-identical.
 
+## Testing and CI
+
+There are no unit tests. Changes are checked by the GitHub Actions workflow, which runs on every pull request and on pushes to `main`:
+
+- `build` runs `make package`, `make check CHECK_STEP=1` (pad and pin counts, non-empty STEP) and `make render`, and uploads the library zip and the renders.
+- `klc` runs the KiCad Library Convention checks on the footprint and symbol with `make klc`.
+- `pages` publishes the renders to GitHub Pages on pushes to `main`.
+- `release` attaches the zip and renders to a GitHub Release for `v*` tags.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for running the same checks locally.
+
 ## Using the library in KiCad
 
 Unzip the release zip, then:
@@ -75,3 +86,7 @@ The release zip contains content derived from these inputs; responsibility for d
 ## License
 
 The source in this repository is released under the [MIT License](LICENSE). The built release zip also contains content derived from the third-party inputs above, which the MIT License does not cover.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Coding agents should also read [AGENTS.md](AGENTS.md).

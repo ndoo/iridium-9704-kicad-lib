@@ -2,13 +2,21 @@
 
 Generators for a KiCad symbol, footprint and 3D model of the Iridium Certus 9704 L-band transceiver module (88-pad LGA, 31.5 x 42.0 mm).
 
-![Angled view](https://github.com/ndoo/iridium-9704-kicad-lib/releases/latest/download/render-angled.png)
-![Top view](https://github.com/ndoo/iridium-9704-kicad-lib/releases/latest/download/render-top.png)
-![Footprint](https://github.com/ndoo/iridium-9704-kicad-lib/releases/latest/download/render-footprint.png)
-![Symbol](https://github.com/ndoo/iridium-9704-kicad-lib/releases/latest/download/render-symbol.png)
-![Rotating view](https://github.com/ndoo/iridium-9704-kicad-lib/releases/latest/download/render-rotating.gif)
+<table>
+  <tr>
+    <td width="50%"><img src="https://ndoo.github.io/iridium-9704-kicad-lib/render-angled.png" alt="Angled view of the 3D model"></td>
+    <td width="50%"><img src="https://ndoo.github.io/iridium-9704-kicad-lib/render-top.png" alt="Top view of the 3D model"></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="https://ndoo.github.io/iridium-9704-kicad-lib/render-footprint.png" alt="Footprint"></td>
+    <td width="50%"><img src="https://ndoo.github.io/iridium-9704-kicad-lib/render-symbol.png" alt="Symbol"></td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center"><img src="https://ndoo.github.io/iridium-9704-kicad-lib/render-rotating.gif" alt="Rotating view of the 3D model" width="50%"></td>
+  </tr>
+</table>
 
-The images are built by the workflow and attached to each release; they show the label artwork, so they are not committed, and they appear here once a release exists.
+The images are built from `main` by the workflow and published to GitHub Pages. They show the label artwork, so they are not committed.
 
 This repository contains only original source: the generators, the pad data, the build system and CI. It contains no built files and no third-party material. Everything built goes to `out/`, and third-party inputs are downloaded to `third_party/` at build time; both are gitignored. The GitHub Actions workflow builds the library and attaches the zip to a GitHub Release for `v*` tags.
 

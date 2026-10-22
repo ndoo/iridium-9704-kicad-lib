@@ -14,6 +14,7 @@ Usage:
 import argparse
 import json
 import os
+import re
 import uuid as _uuid
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -42,6 +43,65 @@ def _make_u():
             key = f"item:{n[0]}"
         return str(_uuid.uuid5(_NS, key))
     return _u
+
+
+def _n(v, digits=6):
+    """Format a number the way KiCad writes it: no trailing zeros, no "-0"."""
+    t = f"{v:.{digits}f}".rstrip("0").rstrip(".")
+    return "0" if t in ("", "-0") else t
+
+
+# KiCad's layer order, which sorts the graphic items within a footprint
+_LAYER_ORDER = ["F.Cu", "B.Cu", "B.Adhes", "F.Adhes", "B.Paste", "F.Paste",
+                "B.SilkS", "F.SilkS", "B.Mask", "F.Mask", "Dwgs.User",
+                "Cmts.User", "Eco1.User", "Eco2.User", "Edge.Cuts", "Margin",
+                "B.CrtYd", "F.CrtYd", "B.Fab", "F.Fab"]
+_SHAPE_ORDER = ["fp_line", "fp_rect", "fp_arc", "fp_circle", "fp_poly"]
+_FP_HEAD = ("version", "generator", "generator_version", "layer", "descr",
+            "tags", "property", "attr", "duplicate_pad_numbers_are_jumpers")
+
+
+def _nm(value):
+    return round(float(value) * 1e6)
+
+
+def _kind(block):
+    return block[0].strip()[1:].split()[0]
+
+
+def _fp_sort_key(block):
+    """Sort key placing a footprint item where KiCad's serializer would."""
+    text = "\n".join(block)
+    kind = _kind(block)
+
+    def nums(tag):
+        m = re.search(rf"\({tag} ([^)]*)\)", text)
+        return tuple(_nm(v) for v in m.group(1).split()) if m else ()
+
+    if kind == "pad":
+        number = re.match(r'\t\(pad "([^"]*)"', block[0]).group(1)
+        return (2, int(number), nums("at"), nums("size"))
+    layer = _LAYER_ORDER.index(re.search(r'\(layer "([^"]+)"\)', text).group(1))
+    if kind == "fp_text":
+        return (1, layer, 0, nums("at"))
+    pts = tuple(_nm(v) for v in re.findall(r"\(xy ([^)]*)\)", text)
+                for v in v.split()) if kind == "fp_poly" else ()
+    return (0, layer, _SHAPE_ORDER.index(kind),
+            nums("start") or nums("center"), nums("end"), pts)
+
+
+def _fp_sort(lines):
+    """Order the items of a footprint the same way KiCad saves them."""
+    blocks = []
+    for line in lines[1:-1]:
+        if line.startswith("\t(") and not line.startswith("\t\t"):
+            blocks.append([])
+        blocks[-1].append(line)
+    head = [b for b in blocks if _kind(b) in _FP_HEAD]
+    body = sorted((b for b in blocks if _kind(b) in _SHAPE_ORDER + ["fp_text", "pad"]),
+                  key=_fp_sort_key)
+    tail = [b for b in blocks if b not in head and b not in body]
+    return [lines[0]] + [l for b in head + body + tail for l in b] + [lines[-1]]
 
 
 def rot(x, y):
@@ -138,7 +198,7 @@ def generate_footprint(pin_data):
 
     def _prop(name, value, at_x, at_y, layer, hide=False, font_sz=silk_font_sz):
         w(f'(property "{name}" "{value}"', 1)
-        w(f'(at {at_x} {at_y} 0)', 2)
+        w(f'(at {_n(at_x)} {_n(at_y)} 0)', 2)
         w('(unlocked yes)', 2)
         w(f'(layer "{layer}")', 2)
         if hide:
@@ -194,8 +254,8 @@ def generate_footprint(pin_data):
     for (x1, y1), (x2, y2) in silk_segs:
         (x1, y1), (x2, y2) = rot(x1, y1), rot(x2, y2)
         w('(fp_line', 1)
-        w(f'(start {x1:.3f} {y1:.3f})', 2)
-        w(f'(end {x2:.3f} {y2:.3f})', 2)
+        w(f'(start {_n(x1, 3)} {_n(y1, 3)})', 2)
+        w(f'(end {_n(x2, 3)} {_n(y2, 3)})', 2)
         w('(stroke', 2)
         w(f'(width {silk_line_width})', 3)
         w('(type solid)', 3)
@@ -214,7 +274,7 @@ def generate_footprint(pin_data):
     tri = [rot(*p) for p in ((px, py), (px - silk_pin1_size, py), (px, py - silk_pin1_size), (px, py))]
     w('(fp_poly', 1)
     w('(pts', 2)
-    w(' '.join(f'(xy {x:.3f} {y:.3f})' for x, y in tri), 3)
+    w(' '.join(f'(xy {_n(x, 3)} {_n(y, 3)})' for x, y in tri), 3)
     w(')', 2)
     w('(stroke', 2)
     w(f'(width {silk_line_width})', 3)
@@ -244,8 +304,8 @@ def generate_footprint(pin_data):
         x1, y1 = rot(*fab_verts[i])
         x2, y2 = rot(*fab_verts[i + 1])
         w('(fp_line', 1)
-        w(f'(start {x1:.3f} {y1:.3f})', 2)
-        w(f'(end {x2:.3f} {y2:.3f})', 2)
+        w(f'(start {_n(x1, 3)} {_n(y1, 3)})', 2)
+        w(f'(end {_n(x2, 3)} {_n(y2, 3)})', 2)
         w('(stroke', 2)
         w(f'(width {fab_line_width})', 3)
         w('(type solid)', 3)
@@ -279,8 +339,8 @@ def generate_footprint(pin_data):
 
         # KLC F5.3.2: All courtyard line elements are placed on a 0.01mm
         # grid
-        w(f'(start {x1:.2f} {y1:.2f})', 2)
-        w(f'(end {x2:.2f} {y2:.2f})', 2)
+        w(f'(start {_n(x1, 2)} {_n(y1, 2)})', 2)
+        w(f'(end {_n(x2, 2)} {_n(y2, 2)})', 2)
 
         w('(stroke', 2)
         w(f'(width {crt_line_width})', 3)
@@ -322,8 +382,8 @@ def generate_footprint(pin_data):
 
         if pin == 1:
             w(f'(pad "{pin}" smd roundrect', 1)
-            w(f'(at {pcx:.2f} {pcy:.2f})', 2)
-            w(f'(size {ipc_w:.2f} {ipc_h:.2f})', 2)
+            w(f'(at {_n(pcx, 2)} {_n(pcy, 2)})', 2)
+            w(f'(size {_n(ipc_w, 2)} {_n(ipc_h, 2)})', 2)
             w(f'(layers {pad_smd_layers})', 2)
             w('(roundrect_rratio 0.25)', 2)
             w('(chamfer_ratio 0.444)', 2)
@@ -332,8 +392,8 @@ def generate_footprint(pin_data):
             w(')', 1)
         else:
             w(f'(pad "{pin}" smd roundrect', 1)
-            w(f'(at {pcx:.2f} {pcy:.2f})', 2)
-            w(f'(size {ipc_w:.2f} {ipc_h:.2f})', 2)
+            w(f'(at {_n(pcx, 2)} {_n(pcy, 2)})', 2)
+            w(f'(size {_n(ipc_w, 2)} {_n(ipc_h, 2)})', 2)
             w(f'(layers {pad_smd_layers})', 2)
             w('(roundrect_rratio 0.25)', 2)
             w(f'(uuid "{_u(f"pad:{pin}")}")', 2)
@@ -349,7 +409,17 @@ def generate_footprint(pin_data):
     ]
     for hx, hy in (rot(*h) for h in hole_positions):
         r = 0.8
-        w(f'(fp_circle (center {hx} {hy}) (end {hx+r} {hy}) (stroke (width 0.1) (type solid)) (layer "Dwgs.User") (uuid "{_u()}"))', 1)
+        w('(fp_circle', 1)
+        w(f'(center {_n(hx)} {_n(hy)})', 2)
+        w(f'(end {_n(hx + r)} {_n(hy)})', 2)
+        w('(stroke', 2)
+        w('(width 0.1)', 3)
+        w('(type solid)', 3)
+        w(')', 2)
+        w('(fill no)', 2)
+        w('(layer "Dwgs.User")', 2)
+        w(f'(uuid "{_u()}")', 2)
+        w(')', 1)
 
     # ------------------------------------------------------------------
     # Ground stitching vias (2 per pad, +/-0.5 mm along long axis)
@@ -373,7 +443,7 @@ def generate_footprint(pin_data):
 
         for vi, (vx, vy) in enumerate(rot(*o) for o in offsets):
             w(f'(pad "{pad["pin"]}" thru_hole circle', 1)
-            w(f'(at {vx:.2f} {vy:.2f})', 2)
+            w(f'(at {_n(vx, 2)} {_n(vy, 2)})', 2)
             w('(size 0.5 0.5)', 2)
             w('(drill 0.2)', 2)
             w('(layers "*.Cu")', 2)
@@ -399,7 +469,7 @@ def generate_footprint(pin_data):
 
     w(')')
 
-    return "\n".join(out) + "\n"
+    return "\n".join(_fp_sort(out)) + "\n"
 
 
 # ---------------------------------------------------------------------------
@@ -508,8 +578,8 @@ BOTTOM_Y = BODY_BOTTOM - SPACING     # -27.94
 # Helpers
 # ---------------------------------------------------------------------------
 def _r(v):
-    """Round a float to 2 decimal places to avoid FP noise."""
-    return round(v, 2)
+    """Format a float to 2 decimal places to avoid FP noise."""
+    return _n(v, 2)
 
 
 def _pin(pin_type, name, number, x, y, angle, hidden=False):
@@ -597,8 +667,8 @@ def generate_symbol():
     parts.append(
         f"\t\t(symbol \"Iridium_9704_0_1\"\n"
         f"\t\t\t(rectangle\n"
-        f"\t\t\t\t(start {BODY_LEFT} {BODY_TOP})\n"
-        f"\t\t\t\t(end {BODY_RIGHT} {BODY_BOTTOM})\n"
+        f"\t\t\t\t(start {_r(BODY_LEFT)} {_r(BODY_TOP)})\n"
+        f"\t\t\t\t(end {_r(BODY_RIGHT)} {_r(BODY_BOTTOM)})\n"
         f"\t\t\t\t(stroke\n"
         f"\t\t\t\t\t(width 0.254)\n"
         f"\t\t\t\t\t(type default)\n"
@@ -659,6 +729,8 @@ def generate_symbol():
         nx = nc_x0 + col * 2.54
         ny = nc_y0 - row * 2.54
         pins.append(_pin("no_connect", "NC", str(p), nx, ny, 270, hidden=True))
+
+    pins.sort(key=lambda p: int(re.search(r'\(number "(\d+)', p).group(1)))
 
     unit1 = "\t\t(symbol \"Iridium_9704_1_1\"\n"
     unit1 += "\n".join(pins)

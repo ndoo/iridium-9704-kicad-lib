@@ -483,8 +483,8 @@ GND_PINS = [1, 2, 4, 8, 11, 14, 17, 18, 22, 25, 31, 32, 45, 47, 48,
 NC_PINS = [28, 29, 30, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59,
            67, 68, 69, 70, 71, 72, 73, 74, 81, 82, 83, 84, 85, 86, 87, 88]
 
-V_BAT_MAIN_PINS = [34, 35, 36]       # pin 34 visible, 35-36 hidden
-V_BAT_PA_PINS   = list(range(37, 45))  # pin 37 visible, 38-44 hidden
+V_BAT_MAIN_PINS = [34, 35, 36]
+V_BAT_PA_PINS   = list(range(37, 45))
 
 # Signal pins: pin_number -> (name, electrical_type)
 SIGNAL_PINS = {
@@ -582,6 +582,32 @@ def _r(v):
     return _n(v, 2)
 
 
+def _unstack(number):
+    """Return the pin numbers covered by a plain or native-stack number."""
+    if not number.startswith("["):
+        return [number]
+    out = []
+    for part in number[1:-1].split(","):
+        lo, _, hi = part.partition("-")
+        out.extend(range(int(lo), int(hi or lo) + 1))
+    return out
+
+
+def _stack(numbers):
+    """Return the native pin stack number for a sorted list of pin numbers."""
+    runs, i = [], 0
+    while i < len(numbers):
+        j = i
+        while j + 1 < len(numbers) and numbers[j + 1] == numbers[j] + 1:
+            j += 1
+        if j - i >= 2:
+            runs.append(f"{numbers[i]}-{numbers[j]}")
+        else:
+            runs.extend(str(n) for n in numbers[i:j + 1])
+        i = j + 1
+    return "[" + ",".join(runs) + "]"
+
+
 def _pin(pin_type, name, number, x, y, angle, hidden=False):
     """Return the s-expression block for one KiCad symbol pin."""
     hide = "\n\t\t\t\t(hide yes)" if hidden else ""
@@ -605,6 +631,12 @@ def _pin(pin_type, name, number, x, y, angle, hidden=False):
         f"\t\t\t\t)\n"
         f"\t\t\t)"
     )
+
+
+def _pin_sort_key(block):
+    """Sort native pin stacks after plain pins, each group by number."""
+    stacked, first = re.search(r'\(number "(\[?)(\d+)', block).groups()
+    return bool(stacked), int(first)
 
 
 def _property(name, value, x, y, hidden=False):
@@ -654,7 +686,7 @@ def generate_symbol():
     parts.append(_property("Reference",   "U",             -10.16, ref_y))
     parts.append(_property("Value",       "Iridium_9704",   10.16, ref_y))
     parts.append(_property("Footprint",   "Iridium_9704:Iridium_9704", 0, -5.08, hidden=True))
-    parts.append(_property("Datasheet",   "",                       0, -7.62, hidden=True))
+    parts.append(_property("Datasheet",   "https://www.iridium.com/products/iridium-certus-9704/", 0, -7.62, hidden=True))
     parts.append(_property("Description",
         "Iridium Certus 9704 L-band satellite transceiver module, 88-pin LGA",
         0, 0, hidden=True))
@@ -701,22 +733,12 @@ def generate_symbol():
     # V_IO (pin 33)
     pins.append(_pin("power_in", "V_IO", "33", TOP_X[33], TOP_Y, 270))
 
-    # V_BAT_MAIN: pin 34 visible, 35-36 hidden passive at same position
-    pins.append(_pin("power_in", "V_BAT_MAIN", "34", TOP_X[34], TOP_Y, 270))
-    for p in V_BAT_MAIN_PINS[1:]:
-        pins.append(_pin("passive", "V_BAT_MAIN", str(p), TOP_X[34], TOP_Y, 270, hidden=True))
+    # V_BAT_MAIN and V_BAT_PA: one native pin stack each
+    pins.append(_pin("power_in", "V_BAT_MAIN", _stack(V_BAT_MAIN_PINS), TOP_X[34], TOP_Y, 270))
+    pins.append(_pin("power_in", "V_BAT_PA", _stack(V_BAT_PA_PINS), TOP_X[37], TOP_Y, 270))
 
-    # V_BAT_PA: pin 37 visible, 38-44 hidden passive at same position
-    pins.append(_pin("power_in", "V_BAT_PA", "37", TOP_X[37], TOP_Y, 270))
-    for p in V_BAT_PA_PINS[1:]:
-        pins.append(_pin("passive", "V_BAT_PA", str(p), TOP_X[37], TOP_Y, 270, hidden=True))
-
-    # Bottom GND: pin 1 visible power_in, all others hidden passive --------
-    pins.append(_pin("power_in", "GND", "1", 0, BOTTOM_Y, 90))
-    for p in GND_PINS:
-        if p == 1:
-            continue
-        pins.append(_pin("passive", "GND", str(p), 0, BOTTOM_Y, 90, hidden=True))
+    # Bottom GND: one native pin stack ---------------------------------------
+    pins.append(_pin("power_in", "GND", _stack(GND_PINS), 0, BOTTOM_Y, 90))
 
     # NC pins: all hidden no_connect, placed inside the body ----------------
     # Spread them in a grid inside the rectangle
@@ -730,7 +752,7 @@ def generate_symbol():
         ny = nc_y0 - row * 2.54
         pins.append(_pin("no_connect", "NC", str(p), nx, ny, 270, hidden=True))
 
-    pins.sort(key=lambda p: int(re.search(r'\(number "(\d+)', p).group(1)))
+    pins.sort(key=_pin_sort_key)
 
     unit1 = "\t\t(symbol \"Iridium_9704_1_1\"\n"
     unit1 += "\n".join(pins)
@@ -769,8 +791,8 @@ def main_symbol(out_path):
     _write(out_path, content)
     print(f"Symbol written to {out_path}")
 
-    pin_count = content.count("(pin ")
-    print(f"Total pin entries: {pin_count}")
+    pin_count = sum(len(_unstack(n)) for n in re.findall(r'\(number "([^"]+)"', content))
+    print(f"Total pins: {pin_count}")
     assert pin_count == 88, f"Expected 88 pins, got {pin_count}"
     print("Pin count OK (88).")
 
